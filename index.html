@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>株価トラッキング & 分析アプリ</title>
+    <link rel="stylesheet" href="static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📈 株価トラッキング & 分析</h1>
+            <p>リアルタイムで株価を追跡し、詳細な分析評価を提供します</p>
+        </header>
+        
+        <div class="add-stock-section">
+            <form id="addStockForm" class="add-stock-form">
+                <input 
+                    type="text" 
+                    id="symbolInput" 
+                    placeholder="銘柄コードを入力（例: AAPL, MSFT, GOOGL）" 
+                    required
+                >
+                <button type="submit">銘柄を追加</button>
+            </form>
+        </div>
+        
+        <div id="dashboard" class="dashboard">
+            <div class="loading">データを読み込んでいます...</div>
+        </div>
+        
+        <div id="stockDetail" class="stock-detail">
+            <!-- 詳細情報がここに表示されます -->
+        </div>
+    </div>
+    
+    <script src="static/app.js"></script>
+</body>
+</html>
