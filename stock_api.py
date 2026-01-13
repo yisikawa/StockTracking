@@ -1,4 +1,5 @@
 """株価API操作モジュール"""
+import logging
 import yfinance as yf
 import pandas as pd
 from typing import Dict, Optional, Tuple, List
@@ -6,6 +7,10 @@ from datetime import datetime
 from database import db
 from config import CACHE_MINUTES, HISTORY_DAYS, USE_YAHOO_AUTH
 from yahoo_auth import yahoo_auth
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
+
+logger = logging.getLogger(__name__)
 
 
 class StockAPI:
@@ -46,8 +51,8 @@ class StockAPI:
                     '52_week_high': info.get('fiftyTwoWeekHigh'),
                     '52_week_low': info.get('fiftyTwoWeekLow')
                 }
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Error getting ticker info for {symbol}: {e}")
         return None
     
     @staticmethod
@@ -57,7 +62,8 @@ class StockAPI:
             ticker = StockAPI._get_ticker(symbol)
             hist = ticker.history(period=period)
             return hist if not hist.empty else None
-        except Exception:
+        except Exception as e:
+            logger.error(f"Error getting history for {symbol}: {e}")
             return None
     
     @staticmethod
@@ -173,6 +179,65 @@ class StockAPI:
             'message': message
         }
 
+    @staticmethod
+    def fetch_stocks_data_parallel(symbols: List[str], delay: float = 0.5) -> List[Dict]:
+        """複数銘柄のデータを並列で取得"""
+        results = []
+        
+        # まずキャッシュをチェックして、有効なキャッシュがある銘柄はAPIリクエストしない
+        symbols_to_fetch = []
+        for symbol in symbols:
+            cached_price = db.get_cached_price(symbol, CACHE_MINUTES)
+            if cached_price:
+                # キャッシュから結果を構築
+                cached_history = db.get_cached_history(symbol)
+                result = StockAPI.build_cached_response(
+                    symbol, cached_price, cached_history,
+                    'キャッシュされたデータを使用しています'
+                )
+                results.append(result)
+            else:
+                symbols_to_fetch.append(symbol)
+        
+        if not symbols_to_fetch:
+            return results
+            
+        # 残りの銘柄を並列で取得
+        # リクエスト間に遅延を入れるために、各スレッドで呼び出すラッパー関数
+        def fetch_wrapper(symbol):
+            try:
+                # ランダムな遅延を入れる（レート制限回避のため）
+                # 並列実行のため、開始タイミングを少しずらす
+                if delay > 0:
+                    time.sleep(delay) 
+                result = get_stock_price_with_fallback(symbol, use_cache=False)
+                if result is None:
+                    return {
+                        'symbol': symbol,
+                        'name': symbol,
+                        'error': 'Failed to fetch data (None returned)'
+                    }
+                return result
+            except Exception as e:
+                logger.error(f"Error fetching parallel data for {symbol}: {e}")
+                return {
+                    'symbol': symbol,
+                    'error': str(e)
+                }
+
+        with ThreadPoolExecutor(max_workers=min(10, len(symbols_to_fetch))) as executor:
+            future_to_symbol = {executor.submit(fetch_wrapper, sym): sym for sym in symbols_to_fetch}
+            for future in as_completed(future_to_symbol):
+                symbol = future_to_symbol[future]
+                try:
+                    data = future.result()
+                    if data:
+                        results.append(data)
+                except Exception as e:
+                    logger.error(f"Exception in parallel execution for {symbol}: {e}")
+        
+        return results
+
 
 def get_stock_price_with_fallback(symbol: str, period: str = '1mo', use_cache: bool = True) -> Optional[Dict]:
     """株価データを取得（フォールバック機能付き）"""
@@ -228,6 +293,7 @@ def get_stock_price_with_fallback(symbol: str, period: str = '1mo', use_cache: b
         error_msg = str(e)
         # レート制限エラーの場合、キャッシュまたは履歴データを使用
         if 'rate limit' in error_msg.lower() or 'too many requests' in error_msg.lower():
+            logger.warning(f"Rate limit hit for {symbol}: {e}")
             if cached_price:
                 cached_history = db.get_cached_history(symbol)
                 return StockAPI.build_cached_response(
@@ -241,4 +307,5 @@ def get_stock_price_with_fallback(symbol: str, period: str = '1mo', use_cache: b
                     symbol, cached_history,
                     'APIレート制限のため、保存された履歴データを使用しています'
                 )
+        logger.error(f"Failed to get price for {symbol}: {e}")
         raise

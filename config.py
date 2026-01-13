@@ -15,17 +15,48 @@ class Config:
     
     def _load_config(self) -> dict:
         """コンフィグファイルを読み込む"""
+        config = self._get_default_config()
+        
+        # JSONファイルから読み込み
         if self.config_path.exists():
             try:
                 with open(self.config_path, 'r', encoding='utf-8') as f:
-                    return json.load(f)
+                    file_config = json.load(f)
+                    # 再帰的にマージするロジックが必要だが、簡易的にトップレベルのみマージ、または主要セクションのみマージ
+                    # ここでは簡易実装として、デフォルトにファイル設定を重ねる
+                    self._deep_update(config, file_config)
             except Exception as e:
                 print(f"警告: コンフィグファイルの読み込みに失敗しました: {e}")
-                print("デフォルト設定を使用します")
         
-        # デフォルト設定
-        return self._get_default_config()
-    
+        # 環境変数で上書き
+        self._override_from_env(config)
+        
+        return config
+
+    def _deep_update(self, base_dict, update_dict):
+        for key, value in update_dict.items():
+            if isinstance(value, dict) and key in base_dict and isinstance(base_dict[key], dict):
+                self._deep_update(base_dict[key], value)
+            else:
+                base_dict[key] = value
+
+    def _override_from_env(self, config):
+        # Server
+        if os.getenv('SERVER_HOST'):
+            config.setdefault('server', {})['host'] = os.getenv('SERVER_HOST')
+        if os.getenv('SERVER_PORT'):
+            config.setdefault('server', {})['port'] = int(os.getenv('SERVER_PORT'))
+        if os.getenv('SERVER_DEBUG'):
+            config.setdefault('server', {})['debug'] = os.getenv('SERVER_DEBUG').lower() == 'true'
+            
+        # Database
+        if os.getenv('DB_NAME'):
+            config.setdefault('database', {})['name'] = os.getenv('DB_NAME')
+            
+        # Yahoo Auth
+        if os.getenv('USE_YAHOO_AUTH'):
+            config.setdefault('yahoo_auth', {})['enabled'] = os.getenv('USE_YAHOO_AUTH').lower() == 'true'
+
     def _get_default_config(self) -> dict:
         """デフォルト設定を返す"""
         return {
@@ -51,7 +82,6 @@ class Config:
             "yahoo_auth": {"enabled": False, "cookie": "", "username": "", "password": ""},
             "server": {"host": "localhost", "port": 5000, "debug": True}
         }
-    
     def get(self, *keys, default=None):
         """設定値を取得（ネストされたキーに対応）"""
         value = self._config

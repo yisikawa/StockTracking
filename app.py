@@ -13,6 +13,28 @@ from stock_analyzer import StockAnalyzer
 app = Flask(__name__, static_folder='static', static_url_path='/static')
 CORS(app)
 
+# Logging configuration
+import logging
+from logging.handlers import RotatingFileHandler
+import os
+
+if not app.debug:
+    if not os.path.exists('logs'):
+        os.mkdir('logs')
+    file_handler = RotatingFileHandler('logs/app.log', maxBytes=10240, backupCount=10)
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+    ))
+    file_handler.setLevel(logging.INFO)
+    
+    # Configure root logger to capture logs from all modules
+    root_logger = logging.getLogger()
+    root_logger.addHandler(file_handler)
+    root_logger.setLevel(logging.INFO)
+    
+    app.logger.info('StockTracking startup')
+
+
 
 @app.route('/api/stocks', methods=['GET'])
 def get_tracked_stocks():
@@ -153,72 +175,67 @@ def get_dashboard():
     stocks = db.get_tracked_stocks()
     dashboard_data = []
     
-    for stock in stocks:
-        symbol = stock['symbol']
-        
-        # まずキャッシュをチェック
-        cached_price = db.get_cached_price(symbol, CACHE_MINUTES)
-        
-        if cached_price:
-            # キャッシュから取得
-            dashboard_data.append({
-                'symbol': symbol,
-                'name': stock['name'],
-                'price': cached_price.get('current_price', 0),
-                'change': cached_price.get('change', 0),
-                'change_percent': cached_price.get('change_percent', 0),
-                'cached': True
-            })
-        else:
-            # APIから取得を試みる
-            try:
-                hist = StockAPI.get_history(symbol, '5d')
-                if hist is not None and not hist.empty:
-                    current_price, previous_close, change, change_percent = StockAPI.calculate_price_change(hist)
-                    
-                    # キャッシュに保存
-                    price_data = {
-                        'current_price': current_price,
-                        'previous_close': previous_close,
-                        'change': change,
-                        'change_percent': change_percent,
-                        'volume': int(hist['Volume'].iloc[-1]) if len(hist) > 0 else 0
-                    }
-                    db.save_price_cache(symbol, price_data)
-                    
-                    dashboard_data.append({
-                        'symbol': symbol,
-                        'name': stock['name'],
-                        'price': current_price,
-                        'change': change,
-                        'change_percent': change_percent,
-                        'cached': False
-                    })
+    symbols = [stock['symbol'] for stock in stocks]
+    
+    # 並列処理で一括取得
+    # ダッシュボード表示時は少し遅延を入れてレート制限を回避
+    dashboard_data = StockAPI.fetch_stocks_data_parallel(symbols, delay=DASHBOARD_REQUEST_DELAY)
+    
+    # 取得結果には銘柄名が含まれていない場合があるため（エラー時など）、補完する
+    stock_map = {stock['symbol']: stock['name'] for stock in stocks}
+    for data in dashboard_data:
+        if 'symbol' in data and data['symbol'] in stock_map:
+            if 'name' not in data or data['name'] == data['symbol']:
+                data['name'] = stock_map[data['symbol']]
                 
-                # レート制限を避けるため、リクエスト間に少し待機
-                time.sleep(DASHBOARD_REQUEST_DELAY)
-            except Exception:
-                # エラーが発生しても、データベースから履歴データがあれば使用
-                cached_history = db.get_cached_history(symbol, days=1)
-                if cached_history:
-                    latest = cached_history[0]
-                    dashboard_data.append({
-                        'symbol': symbol,
-                        'name': stock['name'],
-                        'price': latest.get('close', 0),
-                        'change': 0,
-                        'change_percent': 0,
-                        'cached': True,
-                        'message': '履歴データを使用'
-                    })
+        # エラー時のフォールバック: 履歴データがあればそれを使用
+        if 'error' in data:
+            symbol = data['symbol']
+            cached_history = db.get_cached_history(symbol, days=1)
+            if cached_history:
+                latest = cached_history[0]
+                # 辞書の内容を書き換え
+                data.clear()
+                data.update({
+                    'symbol': symbol,
+                    'name': stock_map.get(symbol, symbol),
+                    'price': latest.get('close', 0),
+                    'change': 0,
+                    'change_percent': 0,
+                    'cached': True,
+                    'message': '履歴データを使用 (並列取得エラー)'
+                })
+            else:
+                # 履歴データもない場合（新規追加直後のエラーなど）
+                # エラー情報を残しつつ、最低限の情報を設定
+                data['name'] = stock_map.get(symbol, symbol)
+                data['price'] = 0
+                data['change'] = 0
+                data['change_percent'] = 0
+                data['cached'] = False
+                data['message'] = f"データ取得エラー: {data.get('error', 'Unknown')}"
+    
+    # 順序を維持するために、元のリスト順に並べ替え
+    ordered_data = []
+    data_map = {d.get('symbol'): d for d in dashboard_data}
+    
+    for symbol in symbols:
+        if symbol in data_map:
+            entry = data_map[symbol]
+            # UI表示用にキー名を調整（price -> current_priceの揺らぎ吸収など）
+            if 'current_price' in entry and 'price' not in entry:
+                entry['price'] = entry['current_price']
+            ordered_data.append(entry)
     
     return jsonify(dashboard_data)
+
+from flask import Flask, jsonify, request, send_from_directory, render_template
 
 
 @app.route('/')
 def index():
     """メインページを返す"""
-    return send_from_directory('.', 'index.html')
+    return render_template('index.html')
 
 
 if __name__ == '__main__':
@@ -226,6 +243,7 @@ if __name__ == '__main__':
     from yahoo_auth import yahoo_auth
     
     print('データベースを初期化しました')
+    db.init_app()
     
     # Yahoo認証状態を表示
     if USE_YAHOO_AUTH:
