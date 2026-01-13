@@ -225,4 +225,4 @@ config.json
 *.swo
 
 # ログフォルダ
-log/
+logs/
