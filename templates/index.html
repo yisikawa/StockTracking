@@ -19,12 +19,31 @@
                 <h1>Stock Tracking</h1>
             </div>
             <div class="header-stats">
+                <div class="refresh-control">
+                    <label class="switch">
+                        <input type="checkbox" id="autoRefreshToggle">
+                        <span class="slider round"></span>
+                    </label>
+                    <span class="refresh-label">自動更新</span>
+                </div>
                 <div class="stat-badge">
                     <span>登録銘柄:</span>
                     <strong id="stockCount">0</strong>
                 </div>
             </div>
         </header>
+
+        <div class="portfolio-summary-bar">
+            <div class="portfolio-stat">
+                <span class="label">総評価額</span>
+                <span class="value" id="totalPortfolioValue">¥0</span>
+            </div>
+            <div class="portfolio-stat">
+                <span class="label">評価損益</span>
+                <span class="value" id="totalPortfolioGain">¥0</span>
+                <span class="percent" id="totalPortfolioGainPercent">(0.00%)</span>
+            </div>
+        </div>
 
         <!-- Main Content: 2-Column Layout -->
         <main class="main-content">
@@ -54,6 +73,25 @@
     </div>
 
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+    <!-- Edit Portfolio Modal -->
+    <div class="modal-overlay" id="editModal">
+        <div class="modal">
+            <h3>保有情報の編集</h3>
+            <div class="form-group">
+                <label>保有数量</label>
+                <input type="number" id="editQuantity" placeholder="0" step="any">
+            </div>
+            <div class="form-group">
+                <label>平均取得単価 (¥/$)</label>
+                <input type="number" id="editAvgPrice" placeholder="0.00" step="any">
+            </div>
+            <div class="modal-actions">
+                <button class="modal-btn secondary" onclick="closeEditModal()">キャンセル</button>
+                <button class="modal-btn primary" onclick="savePortfolio()">保存</button>
+            </div>
+        </div>
+    </div>
+
     <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 

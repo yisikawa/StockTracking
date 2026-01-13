@@ -9,11 +9,15 @@ class TrackedStock(Base):
     symbol = Column(String, unique=True, nullable=False)
     name = Column(String)
     added_at = Column(DateTime, default=datetime.now)
+    quantity = Column(Float, default=0.0)
+    avg_price = Column(Float, default=0.0)
 
     def to_dict(self):
         return {
             'symbol': self.symbol,
             'name': self.name,
+            'quantity': self.quantity if self.quantity else 0.0,
+            'avg_price': self.avg_price if self.avg_price else 0.0,
             'added_at': self.added_at.isoformat() if self.added_at else None
         }
 

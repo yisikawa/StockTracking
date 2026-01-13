@@ -12,7 +12,7 @@ let stocksData = [];
 document.addEventListener('DOMContentLoaded', () => {
     loadStocks();
     setupEventListeners();
-    startAutoRefresh(60000);
+    initAutoRefresh();
 });
 
 function setupEventListeners() {
@@ -79,14 +79,138 @@ function formatLargeNumber(num, currencySymbol = '$', currency = 'USD') {
 }
 
 // ========================================
+// ポートフォリオ管理
+// ========================================
+
+function updatePortfolioSummary(stocks) {
+    let totalValue = 0;
+    let totalCost = 0;
+
+    stocks.forEach(stock => {
+        const qty = stock.quantity || 0;
+        const price = stock.current_price || 0;
+        const avgPrice = stock.avg_price || 0;
+
+        // 簡易計算: 通貨レート変換は未実装のため、単純合算（本来は通貨統一が必要）
+        // ここではすべての価格をそのまま足します
+        if (qty > 0) {
+            totalValue += qty * price;
+            totalCost += qty * avgPrice;
+        }
+    });
+
+    const totalGain = totalValue - totalCost;
+    const gainPercent = totalCost > 0 ? (totalGain / totalCost) * 100 : 0;
+
+    document.getElementById('totalPortfolioValue').textContent = totalValue.toLocaleString('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }); // 仮に円表示
+
+    const gainElement = document.getElementById('totalPortfolioGain');
+    const percentElement = document.getElementById('totalPortfolioGainPercent');
+
+    gainElement.textContent = (totalGain >= 0 ? '+' : '-') + Math.abs(totalGain).toLocaleString('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).replace('JPY', '').trim();
+    percentElement.textContent = `(${totalGain >= 0 ? '+' : ''}${gainPercent.toFixed(2)}%)`;
+
+    gainElement.className = `value ${totalGain >= 0 ? 'text-positive' : 'text-negative'}`;
+    percentElement.className = `percent ${totalGain >= 0 ? 'text-positive' : 'text-negative'}`;
+}
+
+let editingSymbol = null;
+
+function openEditModal() {
+    if (!currentStock) return;
+    const stock = stocksData.find(s => s.symbol === currentStock);
+    if (!stock) return;
+
+    editingSymbol = stock.symbol;
+    document.getElementById('editQuantity').value = stock.quantity || '';
+    document.getElementById('editAvgPrice').value = stock.avg_price || '';
+
+    document.getElementById('editModal').classList.add('show');
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').classList.remove('show');
+    editingSymbol = null;
+}
+
+async function savePortfolio() {
+    if (!editingSymbol) return;
+
+    const quantity = parseFloat(document.getElementById('editQuantity').value) || 0;
+    const avgPrice = parseFloat(document.getElementById('editAvgPrice').value) || 0;
+
+    try {
+        const response = await fetch(`${API_BASE}/stocks/${editingSymbol}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ quantity, avg_price: avgPrice })
+        });
+
+        if (response.ok) {
+            Toastify({
+                text: "ポートフォリオ情報を更新しました",
+                duration: 3000,
+                gravity: "top",
+                position: "right",
+                className: "toast-success",
+                style: { background: "var(--bg-secondary)", borderLeft: "4px solid var(--positive)" }
+            }).showToast();
+
+            closeEditModal();
+            loadStocks(); // Reload to update UI
+        } else {
+            throw new Error('Update failed');
+        }
+    } catch (error) {
+        console.error('Save failed:', error);
+        Toastify({
+            text: "更新に失敗しました",
+            duration: 3000,
+            gravity: "top",
+            position: "right",
+            className: "error-toast",
+            style: { background: "rgba(239, 68, 68, 0.15)", color: "var(--negative)" }
+        }).showToast();
+    }
+}
+
+// ========================================
 // 自動更新
 // ========================================
+
+// Auto Refresh Logic
+function initAutoRefresh() {
+    const toggle = document.getElementById('autoRefreshToggle');
+    const savedState = localStorage.getItem('autoRefresh') === 'true';
+
+    toggle.checked = savedState;
+    if (savedState) {
+        startAutoRefresh();
+    }
+
+    toggle.addEventListener('change', (e) => {
+        const isChecked = e.target.checked;
+        localStorage.setItem('autoRefresh', isChecked);
+        if (isChecked) {
+            startAutoRefresh();
+        } else {
+            stopAutoRefresh();
+        }
+    });
+}
 
 function startAutoRefresh(intervalMs = 60000) {
     if (autoRefreshInterval) clearInterval(autoRefreshInterval);
     autoRefreshInterval = setInterval(() => {
-        loadStocks();
+        loadStocks(false); // Pass false to indicate background refresh if supported
     }, intervalMs);
+}
+
+function stopAutoRefresh() {
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+    }
 }
 
 // ========================================
@@ -109,6 +233,7 @@ async function loadStocks() {
         });
 
         renderStockList(stocksData);
+        updatePortfolioSummary(stocksData);
         document.getElementById('stockCount').textContent = stocks.length;
 
         // 現在選択中の銘柄があれば、データを更新
@@ -272,8 +397,9 @@ function renderStockDetail(priceData, analysisData) {
     const tabButtons = `
         <button class="tab-btn ${currentTab === 'chart' ? 'active' : ''}" onclick="switchTab('chart')">📈 チャート</button>
         <button class="tab-btn ${currentTab === 'analysis' ? 'active' : ''}" onclick="switchTab('analysis')">📊 分析</button>
-        <button class="tab-btn ${currentTab === 'financials' ? 'active' : ''}" onclick="switchTab('financials')">💰 財務</button>
+        <button class="tab-btn ${currentTab === 'financials' ? 'active' : ''}" onclick="switchTab('financials')">🏢 財務</button>
         <button class="tab-btn ${currentTab === 'dividends' ? 'active' : ''}" onclick="switchTab('dividends')">💵 配当</button>
+        <button class="tab-btn ${currentTab === 'portfolio' ? 'active' : ''}" onclick="switchTab('portfolio')">💼 保有状況</button>
     `;
 
     detailPanel.innerHTML = `
@@ -316,7 +442,7 @@ function switchTab(tab) {
 }
 
 function getTabLabel(tab) {
-    return { 'chart': 'チャート', 'analysis': '分析', 'financials': '財務', 'dividends': '配当' }[tab] || tab;
+    return { 'chart': 'チャート', 'analysis': '分析', 'financials': '財務', 'dividends': '配当', 'portfolio': '保有状況' }[tab] || tab;
 }
 
 function renderTabContent(tab, priceData, analysisData) {
@@ -329,19 +455,65 @@ function renderTabContent(tab, priceData, analysisData) {
         case 'analysis': renderAnalysisTab(tabContent, analysisData, currencySymbol, currency); break;
         case 'financials': renderFinancialsTab(tabContent, priceData.symbol, currencySymbol, currency); break;
         case 'dividends': renderDividendsTab(tabContent, priceData.symbol, currencySymbol, currency); break;
+        case 'portfolio': renderPortfolioTab(tabContent, priceData, currencySymbol, currency); break;
     }
+}
+
+function renderPortfolioTab(container, priceData, currencySymbol, currency) {
+    const stock = stocksData.find(s => s.symbol === priceData.symbol);
+    const qty = stock ? (stock.quantity || 0) : 0;
+    const avgPrice = stock ? (stock.avg_price || 0) : 0;
+    const currentValue = qty * priceData.current_price;
+    const totalCost = qty * avgPrice;
+    const gain = currentValue - totalCost;
+    const gainPercent = totalCost > 0 ? (gain / totalCost) * 100 : 0;
+    const gainClass = gain >= 0 ? 'text-positive' : 'text-negative';
+
+    container.innerHTML = `
+        <div class="portfolio-section">
+            <div class="portfolio-header">
+                <button class="edit-portfolio-btn" onclick="openEditModal()">
+                    <i class="fas fa-edit"></i> 保有情報を編集
+                </button>
+            </div>
+            <div class="portfolio-grid">
+                <div class="financial-item">
+                    <span class="label">保有数量</span>
+                    <span class="value">${qty}</span>
+                </div>
+                <div class="financial-item">
+                    <span class="label">取得単価</span>
+                    <span class="value">${formatPrice(avgPrice, currencySymbol, currency)}</span>
+                </div>
+                <div class="financial-item">
+                    <span class="label">取得総額</span>
+                    <span class="value">${formatPrice(totalCost, currencySymbol, currency)}</span>
+                </div>
+                <div class="financial-item">
+                    <span class="label">現在評価額</span>
+                    <span class="value">${formatPrice(currentValue, currencySymbol, currency)}</span>
+                </div>
+                <div class="financial-item">
+                    <span class="label">評価損益</span>
+                    <span class="value ${gainClass}">
+                        ${gain >= 0 ? '+' : ''}${formatPrice(gain, currencySymbol, currency).replace(currencySymbol, '')} 
+                    </span>
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 function renderChartTab(container, priceData, currencySymbol, currency) {
     container.innerHTML = `
-        <div class="price-info">
+        < div class="price-info" >
             <div class="info-box"><h4>現在価格</h4><div class="value">${formatPrice(priceData.current_price, currencySymbol, currency)}</div></div>
             <div class="info-box"><h4>前日終値</h4><div class="value">${formatPrice(priceData.previous_close, currencySymbol, currency)}</div></div>
             <div class="info-box"><h4>出来高</h4><div class="value">${formatNumber(priceData.volume)}</div></div>
             <div class="info-box"><h4>時価総額</h4><div class="value">${formatLargeNumber(priceData.market_cap, currencySymbol, currency)}</div></div>
             <div class="info-box"><h4>52週高値</h4><div class="value">${formatPrice(priceData['52_week_high'], currencySymbol, currency)}</div></div>
             <div class="info-box"><h4>52週安値</h4><div class="value">${formatPrice(priceData['52_week_low'], currencySymbol, currency)}</div></div>
-        </div>
+        </div >
         <div class="chart-container"><canvas id="priceChart"></canvas></div>
     `;
     drawChart(priceData.history, currencySymbol, currency);
@@ -351,7 +523,7 @@ function renderAnalysisTab(container, analysisData, currencySymbol, currency) {
     const scoreColor = analysisData.score >= 80 ? '#22c55e' : analysisData.score >= 60 ? '#84cc16' : analysisData.score >= 40 ? '#eab308' : analysisData.score >= 20 ? '#f97316' : '#ef4444';
 
     container.innerHTML = `
-        <div class="analysis-section">
+        < div class="analysis-section" >
             <div class="analysis-header">
                 <div class="analysis-score">
                     <div class="score-circle" style="border-color: ${scoreColor}; color: ${scoreColor}">${Math.round(analysisData.score)}</div>
@@ -379,15 +551,15 @@ function renderAnalysisTab(container, analysisData, currencySymbol, currency) {
                 </div>
                 <div class="analysis-item"><h5>期間内高値/安値</h5><p>${formatPrice(analysisData.price_range.max, currencySymbol, currency)} / ${formatPrice(analysisData.price_range.min, currencySymbol, currency)}</p></div>
             </div>
-        </div>
-    `;
+        </div >
+        `;
 }
 
 async function renderFinancialsTab(container, symbol, currencySymbol, currency) {
     container.innerHTML = '<div class="loading"><div class="spinner"></div>読み込み中...</div>';
 
     try {
-        const response = await fetch(`${API_BASE}/stocks/${symbol}/financials`);
+        const response = await fetch(`${API_BASE} /stocks/${symbol}/financials`);
         const data = await response.json();
         if (data.error) { container.innerHTML = `<div class="error">${data.error}</div>`; return; }
 

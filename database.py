@@ -47,6 +47,22 @@ class Database:
         logger.info(f"Removing stock: {symbol}")
         db_session.query(TrackedStock).filter_by(symbol=symbol.upper()).delete()
         db_session.commit()
+
+    def update_portfolio(self, symbol: str, quantity: float, avg_price: float) -> bool:
+        """ポートフォリオ情報（数量・取得単価）を更新"""
+        try:
+            stock = db_session.query(TrackedStock).filter_by(symbol=symbol.upper()).first()
+            if stock:
+                stock.quantity = quantity
+                stock.avg_price = avg_price
+                db_session.commit()
+                logger.info(f"Updated portfolio for {symbol}: Qty={quantity}, Avg={avg_price}")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error updating portfolio: {e}")
+            db_session.rollback()
+            return False
     
     def get_cached_price(self, symbol: str, cache_minutes: int = CACHE_MINUTES) -> Optional[Dict]:
         """キャッシュされた価格情報を取得"""

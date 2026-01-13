@@ -1,0 +1,41 @@
+{
+  "database": {
+    "name": "stock_tracking.db"
+  },
+  "cache": {
+    "minutes": 5,
+    "history_days": 30
+  },
+  "api": {
+    "max_retries": 2,
+    "retry_delay": 1,
+    "dashboard_request_delay": 0.5
+  },
+  "analysis": {
+    "rsi_period": 14,
+    "ma_short": 20,
+    "ma_long": 50,
+    "trading_days_per_year": 252,
+    "score_excellent": 80,
+    "score_good": 60,
+    "score_fair": 40,
+    "score_poor": 20,
+    "volatility_low": 20.0,
+    "volatility_high": 40.0,
+    "rsi_oversold": 30.0,
+    "rsi_overbought": 70.0,
+    "price_position_low": 0.3,
+    "price_position_high": 0.7
+  },
+  "yahoo_auth": {
+    "enabled": false,
+    "cookie": "",
+    "username": "",
+    "password": ""
+  },
+  "server": {
+    "host": "localhost",
+    "port": 5000,
+    "debug": true
+  }
+}

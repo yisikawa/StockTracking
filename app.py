@@ -123,6 +123,30 @@ def remove_stock(symbol: str):
     return jsonify({'message': '銘柄を削除しました'})
 
 
+@app.route('/api/stocks/<path:symbol>', methods=['PUT'])
+def update_stock_portfolio(symbol: str):
+    """ポートフォリオ情報（数量・平均取得単価）を更新"""
+    symbol = symbol.upper()
+    data = request.json
+    
+    quantity = data.get('quantity')
+    avg_price = data.get('avg_price')
+    
+    if quantity is None or avg_price is None:
+        return jsonify({'error': '数量と平均取得単価が必要です'}), 400
+        
+    try:
+        quantity = float(quantity)
+        avg_price = float(avg_price)
+    except ValueError:
+        return jsonify({'error': '数値形式が無効です'}), 400
+        
+    if db.update_portfolio(symbol, quantity, avg_price):
+        return jsonify({'message': 'ポートフォリオ情報を更新しました', 'symbol': symbol})
+    else:
+        return jsonify({'error': '銘柄が見つかりません'}), 404
+
+
 @app.route('/api/stocks/<path:symbol>/price', methods=['GET'])
 def get_stock_price(symbol: str):
     """株価データを取得（最新と履歴）- キャッシュ機能付き"""

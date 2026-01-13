@@ -3,6 +3,10 @@ import json
 import os
 from typing import Final, Optional
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 class Config:
@@ -56,6 +60,12 @@ class Config:
         # Yahoo Auth
         if os.getenv('USE_YAHOO_AUTH'):
             config.setdefault('yahoo_auth', {})['enabled'] = os.getenv('USE_YAHOO_AUTH').lower() == 'true'
+        if os.getenv('YAHOO_COOKIE'):
+            config.setdefault('yahoo_auth', {})['cookie'] = os.getenv('YAHOO_COOKIE')
+        if os.getenv('YAHOO_USERNAME'):
+            config.setdefault('yahoo_auth', {})['username'] = os.getenv('YAHOO_USERNAME')
+        if os.getenv('YAHOO_PASSWORD'):
+            config.setdefault('yahoo_auth', {})['password'] = os.getenv('YAHOO_PASSWORD')
 
     def _get_default_config(self) -> dict:
         """デフォルト設定を返す"""
