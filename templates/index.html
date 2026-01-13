@@ -3,38 +3,53 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>株価トラッキング & 分析アプリ</title>
-    <link rel="stylesheet" href="static/style.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <title>Stock Tracking</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>📈 株価トラッキング & 分析</h1>
-            <p>リアルタイムで株価を追跡し、詳細な分析評価を提供します</p>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-title">
+                <span style="font-size: 1.5rem;">📈</span>
+                <h1>Stock Tracking</h1>
+            </div>
+            <div class="header-stats">
+                <div class="stat-badge">
+                    <span>登録銘柄:</span>
+                    <strong id="stockCount">0</strong>
+                </div>
+            </div>
         </header>
-        
-        <div class="add-stock-section">
-            <form id="addStockForm" class="add-stock-form">
-                <input 
-                    type="text" 
-                    id="symbolInput" 
-                    placeholder="銘柄コードを入力（例: AAPL, MSFT, GOOGL）" 
-                    required
-                >
-                <button type="submit">銘柄を追加</button>
-            </form>
-        </div>
-        
-        <div id="dashboard" class="dashboard">
-            <div class="loading">データを読み込んでいます...</div>
-        </div>
-        
-        <div id="stockDetail" class="stock-detail">
-            <!-- 詳細情報がここに表示されます -->
-        </div>
+
+        <!-- Main Content: 2-Column Layout -->
+        <main class="main-content">
+            <!-- Left Panel: Stock List -->
+            <aside class="stocks-panel">
+                <div class="panel-header">
+                    <h2>銘柄リスト</h2>
+                    <form id="addStockForm" class="add-stock-form">
+                        <input type="text" id="symbolInput" placeholder="銘柄コード (例: 7203, AAPL)">
+                        <button type="submit">追加</button>
+                    </form>
+                </div>
+                <div id="stockList" class="stock-list">
+                    <!-- Stock items will be rendered here -->
+                </div>
+            </aside>
+
+            <!-- Right Panel: Stock Detail -->
+            <section id="stockDetail" class="detail-panel">
+                <div class="empty-detail">
+                    <div class="empty-icon">📊</div>
+                    <h2>銘柄を選択してください</h2>
+                    <p>左のリストから銘柄をクリックすると、<br>詳細な情報がここに表示されます</p>
+                </div>
+            </section>
+        </main>
     </div>
-    
-    <script src="static/app.js"></script>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>

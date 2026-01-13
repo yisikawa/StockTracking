@@ -1,5 +1,5 @@
 """株価トラッキング & 分析アプリ - メインアプリケーションファイル"""
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, render_template
 from flask_cors import CORS
 from datetime import datetime
 import time
@@ -9,6 +9,7 @@ from config import MAX_RETRIES, RETRY_DELAY, DASHBOARD_REQUEST_DELAY, CACHE_MINU
 from database import db
 from stock_api import StockAPI, get_stock_price_with_fallback
 from stock_analyzer import StockAnalyzer
+from symbol_utils import normalize_symbol, get_currency, SymbolUtils
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
 CORS(app)
@@ -47,11 +48,14 @@ def get_tracked_stocks():
 def add_stock():
     """新しい銘柄を追加"""
     data = request.json
-    symbol = data.get('symbol', '').upper() if data else ''
+    raw_symbol = data.get('symbol', '').upper() if data else ''
     force_add = data.get('force', False) if data else False
     
-    if not symbol:
+    if not raw_symbol:
         return jsonify({'error': '銘柄コードが必要です'}), 400
+    
+    # シンボルを正規化（日本株対応）
+    symbol = normalize_symbol(raw_symbol)
     
     # リトライループ
     for attempt in range(MAX_RETRIES):
@@ -111,7 +115,7 @@ def add_stock():
     return jsonify({'error': '銘柄の追加に失敗しました。しばらく待ってから再度お試しください。'}), 500
 
 
-@app.route('/api/stocks/<symbol>', methods=['DELETE'])
+@app.route('/api/stocks/<path:symbol>', methods=['DELETE'])
 def remove_stock(symbol: str):
     """銘柄を削除"""
     symbol = symbol.upper()
@@ -119,7 +123,7 @@ def remove_stock(symbol: str):
     return jsonify({'message': '銘柄を削除しました'})
 
 
-@app.route('/api/stocks/<symbol>/price', methods=['GET'])
+@app.route('/api/stocks/<path:symbol>/price', methods=['GET'])
 def get_stock_price(symbol: str):
     """株価データを取得（最新と履歴）- キャッシュ機能付き"""
     symbol = symbol.upper()
@@ -147,10 +151,10 @@ def get_stock_price(symbol: str):
         return jsonify({'error': f'データの取得に失敗しました: {error_msg}'}), 500
 
 
-@app.route('/api/stocks/<symbol>/analysis', methods=['GET'])
+@app.route('/api/stocks/<path:symbol>/analysis', methods=['GET'])
 def analyze_stock(symbol: str):
     """株価の分析評価を実行"""
-    symbol = symbol.upper()
+    symbol = normalize_symbol(symbol)
     period = request.args.get('period', '1y')
     
     try:
@@ -159,14 +163,85 @@ def analyze_stock(symbol: str):
             return jsonify({'error': 'データが見つかりません'}), 404
         
         analysis = StockAnalyzer.analyze(hist)
+        currency = get_currency(symbol)
         
         return jsonify({
             'symbol': symbol,
+            'currency': currency,
+            'currency_symbol': SymbolUtils.get_currency_symbol(currency),
             'analysis_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             **analysis
         })
     except Exception as e:
         return jsonify({'error': f'分析の実行に失敗しました: {str(e)}'}), 500
+
+
+@app.route('/api/stocks/<path:symbol>/dividends', methods=['GET'])
+def get_dividends(symbol: str):
+    """配当履歴を取得"""
+    symbol = normalize_symbol(symbol)
+    
+    try:
+        result = StockAPI.get_dividends(symbol)
+        if result is None:
+            return jsonify({'error': '配当データの取得に失敗しました'}), 500
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': f'配当データの取得に失敗しました: {str(e)}'}), 500
+
+
+@app.route('/api/stocks/<path:symbol>/financials', methods=['GET'])
+def get_financials(symbol: str):
+    """財務情報を取得"""
+    symbol = normalize_symbol(symbol)
+    
+    try:
+        result = StockAPI.get_financials(symbol)
+        if result is None:
+            return jsonify({'error': '財務データの取得に失敗しました'}), 500
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': f'財務データの取得に失敗しました: {str(e)}'}), 500
+
+
+@app.route('/api/stocks/search', methods=['GET'])
+def search_stocks():
+    """銘柄検索"""
+    query = request.args.get('q', '')
+    if not query:
+        return jsonify({'error': '検索クエリが必要です'}), 400
+    
+    try:
+        # シンボルを正規化して検索
+        normalized = normalize_symbol(query)
+        info = StockAPI.get_ticker_info(normalized)
+        
+        if info:
+            symbol_info = SymbolUtils.get_stock_info(query)
+            return jsonify({
+                'results': [{
+                    'symbol': normalized,
+                    'name': info.get('name', normalized),
+                    'market': symbol_info.get('market'),
+                    'currency': symbol_info.get('currency'),
+                    'sector': info.get('sector'),
+                    'industry': info.get('industry'),
+                }]
+            })
+        return jsonify({'results': []})
+    except Exception as e:
+        return jsonify({'results': [], 'error': str(e)})
+
+
+@app.route('/api/symbol/normalize', methods=['GET'])
+def normalize_stock_symbol():
+    """銘柄コードを正規化"""
+    symbol = request.args.get('symbol', '')
+    if not symbol:
+        return jsonify({'error': 'シンボルが必要です'}), 400
+    
+    info = SymbolUtils.get_stock_info(symbol)
+    return jsonify(info)
 
 
 @app.route('/api/dashboard', methods=['GET'])
@@ -228,8 +303,6 @@ def get_dashboard():
             ordered_data.append(entry)
     
     return jsonify(dashboard_data)
-
-from flask import Flask, jsonify, request, send_from_directory, render_template
 
 
 @app.route('/')

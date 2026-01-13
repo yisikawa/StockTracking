@@ -7,6 +7,7 @@ from datetime import datetime
 from database import db
 from config import CACHE_MINUTES, HISTORY_DAYS, USE_YAHOO_AUTH
 from yahoo_auth import yahoo_auth
+from symbol_utils import SymbolUtils, normalize_symbol, get_currency, format_price
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 
@@ -19,6 +20,9 @@ class StockAPI:
     @staticmethod
     def _get_ticker(symbol: str):
         """認証情報付きTickerオブジェクトを取得"""
+        # シンボルを正規化（日本株対応）
+        normalized_symbol = normalize_symbol(symbol)
+        
         # Yahoo認証が有効な場合、セッションを設定
         if USE_YAHOO_AUTH:
             session = yahoo_auth.get_session()
@@ -33,23 +37,46 @@ class StockAPI:
                     cookie_string = '; '.join([f"{k}={v}" for k, v in cookies.items()])
                     os.environ['YAHOO_COOKIE'] = cookie_string
         
-        ticker = yf.Ticker(symbol)
+        ticker = yf.Ticker(normalized_symbol)
         return ticker
+    
+    @staticmethod
+    def normalize_symbol(symbol: str) -> str:
+        """銘柄コードを正規化（日本株対応）"""
+        return normalize_symbol(symbol)
     
     @staticmethod
     def get_ticker_info(symbol: str) -> Optional[Dict]:
         """銘柄情報を取得"""
         try:
+            normalized = normalize_symbol(symbol)
             ticker = StockAPI._get_ticker(symbol)
             info = ticker.info
+            
+            # 通貨情報を取得
+            currency = get_currency(normalized)
+            symbol_info = SymbolUtils.get_stock_info(symbol)
+            
             if info and ('longName' in info or 'shortName' in info):
                 return {
-                    'name': info.get('longName') or info.get('shortName') or symbol,
+                    'name': info.get('longName') or info.get('shortName') or symbol_info.get('known_name') or symbol,
                     'market_cap': info.get('marketCap'),
                     'pe_ratio': info.get('trailingPE'),
                     'dividend_yield': info.get('dividendYield'),
                     '52_week_high': info.get('fiftyTwoWeekHigh'),
-                    '52_week_low': info.get('fiftyTwoWeekLow')
+                    '52_week_low': info.get('fiftyTwoWeekLow'),
+                    'currency': currency,
+                    'market': symbol_info.get('market'),
+                    'sector': info.get('sector'),
+                    'industry': info.get('industry'),
+                }
+            
+            # infoが取得できない場合でも、シンボルベースの情報を返す
+            if symbol_info.get('known_name'):
+                return {
+                    'name': symbol_info.get('known_name'),
+                    'currency': currency,
+                    'market': symbol_info.get('market'),
                 }
         except Exception as e:
             logger.warning(f"Error getting ticker info for {symbol}: {e}")
@@ -106,11 +133,15 @@ class StockAPI:
         if hist is None or hist.empty:
             return None
         
+        normalized = normalize_symbol(symbol)
         current_price, previous_close, change, change_percent = StockAPI.calculate_price_change(hist)
         history_data = StockAPI.format_history_data(hist)
         
+        # 通貨情報を取得
+        currency = info.get('currency') if info else get_currency(normalized)
+        
         response = {
-            'symbol': symbol.upper(),
+            'symbol': normalized,
             'name': (info.get('name') if info else symbol) if info else symbol,
             'current_price': current_price,
             'previous_close': previous_close,
@@ -122,6 +153,11 @@ class StockAPI:
             'dividend_yield': info.get('dividend_yield') if info else None,
             '52_week_high': info.get('52_week_high') if info else None,
             '52_week_low': info.get('52_week_low') if info else None,
+            'currency': currency,
+            'currency_symbol': SymbolUtils.get_currency_symbol(currency),
+            'market': info.get('market') if info else SymbolUtils.get_market_name(normalized),
+            'sector': info.get('sector') if info else None,
+            'industry': info.get('industry') if info else None,
             'history': history_data,
             'cached': cached
         }
@@ -134,8 +170,11 @@ class StockAPI:
     @staticmethod
     def build_cached_response(symbol: str, cached_price: Dict, cached_history: List[Dict], message: str) -> Dict:
         """キャッシュデータからレスポンスを構築"""
+        normalized = normalize_symbol(symbol)
+        currency = get_currency(normalized)
+        
         return {
-            'symbol': symbol.upper(),
+            'symbol': normalized,
             'name': cached_price.get('name', symbol),
             'current_price': cached_price.get('current_price', 0),
             'previous_close': cached_price.get('previous_close', 0),
@@ -147,6 +186,9 @@ class StockAPI:
             'dividend_yield': cached_price.get('dividend_yield'),
             '52_week_high': cached_price.get('week_52_high'),
             '52_week_low': cached_price.get('week_52_low'),
+            'currency': currency,
+            'currency_symbol': SymbolUtils.get_currency_symbol(currency),
+            'market': SymbolUtils.get_market_name(normalized),
             'history': cached_history,
             'cached': True,
             'message': message
@@ -158,11 +200,13 @@ class StockAPI:
         if not cached_history:
             return None
         
+        normalized = normalize_symbol(symbol)
+        currency = get_currency(normalized)
         latest = cached_history[0]
         previous = cached_history[1] if len(cached_history) > 1 else latest
         
         return {
-            'symbol': symbol.upper(),
+            'symbol': normalized,
             'name': symbol,
             'current_price': latest.get('close', 0),
             'previous_close': previous.get('close', latest.get('close', 0)),
@@ -174,10 +218,132 @@ class StockAPI:
             'dividend_yield': None,
             '52_week_high': None,
             '52_week_low': None,
+            'currency': currency,
+            'currency_symbol': SymbolUtils.get_currency_symbol(currency),
+            'market': SymbolUtils.get_market_name(normalized),
             'history': cached_history,
             'cached': True,
             'message': message
         }
+    
+    @staticmethod
+    def get_dividends(symbol: str) -> Optional[Dict]:
+        """配当履歴を取得"""
+        try:
+            ticker = StockAPI._get_ticker(symbol)
+            dividends = ticker.dividends
+            
+            if dividends.empty:
+                return {'symbol': normalize_symbol(symbol), 'dividends': [], 'has_data': False}
+            
+            data = [
+                {'date': date.strftime('%Y-%m-%d'), 'amount': float(amount)}
+                for date, amount in dividends.items()
+            ]
+            
+            # 年間配当を計算（直近1年分を合計）
+            recent_dividends = dividends.tail(4)  # 四半期配当の場合、直近4回
+            annual_dividend = float(recent_dividends.sum()) if not recent_dividends.empty else 0
+            
+            return {
+                'symbol': normalize_symbol(symbol),
+                'dividends': data,
+                'has_data': True,
+                'annual_dividend': annual_dividend,
+                'currency': get_currency(normalize_symbol(symbol))
+            }
+        except Exception as e:
+            logger.error(f"Error getting dividends for {symbol}: {e}")
+            return None
+    
+    @staticmethod
+    def get_financials(symbol: str) -> Optional[Dict]:
+        """財務情報を取得"""
+        try:
+            ticker = StockAPI._get_ticker(symbol)
+            info = ticker.info
+            normalized = normalize_symbol(symbol)
+            currency = get_currency(normalized)
+            
+            return {
+                'symbol': normalized,
+                'currency': currency,
+                'currency_symbol': SymbolUtils.get_currency_symbol(currency),
+                'market_cap': info.get('marketCap'),
+                'enterprise_value': info.get('enterpriseValue'),
+                'pe_ratio': info.get('trailingPE'),
+                'forward_pe': info.get('forwardPE'),
+                'peg_ratio': info.get('pegRatio'),
+                'price_to_book': info.get('priceToBook'),
+                'eps': info.get('trailingEps'),
+                'forward_eps': info.get('forwardEps'),
+                'book_value': info.get('bookValue'),
+                'dividend_rate': info.get('dividendRate'),
+                'dividend_yield': info.get('dividendYield'),
+                'ex_dividend_date': info.get('exDividendDate'),
+                'payout_ratio': info.get('payoutRatio'),
+                'profit_margin': info.get('profitMargins'),
+                'operating_margin': info.get('operatingMargins'),
+                'revenue': info.get('totalRevenue'),
+                'revenue_per_share': info.get('revenuePerShare'),
+                'gross_profit': info.get('grossProfits'),
+                'ebitda': info.get('ebitda'),
+                'net_income': info.get('netIncomeToCommon'),
+                'free_cash_flow': info.get('freeCashflow'),
+                'operating_cash_flow': info.get('operatingCashflow'),
+                'total_cash': info.get('totalCash'),
+                'total_debt': info.get('totalDebt'),
+                'debt_to_equity': info.get('debtToEquity'),
+                'current_ratio': info.get('currentRatio'),
+                'quick_ratio': info.get('quickRatio'),
+                'return_on_equity': info.get('returnOnEquity'),
+                'return_on_assets': info.get('returnOnAssets'),
+                'beta': info.get('beta'),
+                'shares_outstanding': info.get('sharesOutstanding'),
+                'float_shares': info.get('floatShares'),
+            }
+        except Exception as e:
+            logger.error(f"Error getting financials for {symbol}: {e}")
+            return None
+    
+    @staticmethod
+    def get_history_with_interval(symbol: str, period: str = '1mo', interval: str = '1d') -> Optional[pd.DataFrame]:
+        """インターバル指定付きで株価履歴を取得"""
+        try:
+            ticker = StockAPI._get_ticker(symbol)
+            # interval: 1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo
+            hist = ticker.history(period=period, interval=interval)
+            return hist if not hist.empty else None
+        except Exception as e:
+            logger.error(f"Error getting history with interval for {symbol}: {e}")
+            return None
+    
+    @staticmethod
+    def get_multiple_stocks_history(symbols: List[str], period: str = '1mo') -> Dict[str, pd.DataFrame]:
+        """複数銘柄の履歴を一括取得（効率的）"""
+        try:
+            # シンボルを正規化
+            normalized_symbols = [normalize_symbol(s) for s in symbols]
+            
+            if not normalized_symbols:
+                return {}
+            
+            # yf.downloadは複数銘柄を一度のリクエストで取得可能
+            data = yf.download(normalized_symbols, period=period, group_by='ticker', progress=False)
+            
+            result = {}
+            if len(normalized_symbols) == 1:
+                # 単一銘柄の場合、データ構造が異なる
+                result[normalized_symbols[0]] = data
+            else:
+                for symbol in normalized_symbols:
+                    if symbol in data.columns.get_level_values(0):
+                        result[symbol] = data[symbol]
+            
+            return result
+        except Exception as e:
+            logger.error(f"Error in bulk download: {e}")
+            return {}
 
     @staticmethod
     def fetch_stocks_data_parallel(symbols: List[str], delay: float = 0.5) -> List[Dict]:
