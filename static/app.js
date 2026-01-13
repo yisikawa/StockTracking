@@ -18,10 +18,22 @@ document.addEventListener('DOMContentLoaded', () => {
 function setupEventListeners() {
     document.getElementById('addStockForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const symbol = document.getElementById('symbolInput').value.trim().toUpperCase();
+        const input = document.getElementById('symbolInput');
+        const button = document.getElementById('addStockBtn');
+        const symbol = input.value.trim().toUpperCase();
+
         if (symbol) {
+            // Loading State
+            const originalText = button.textContent;
+            button.disabled = true;
+            button.innerHTML = '<span class="button-loader"></span>追加中';
+
             await addStock(symbol);
-            document.getElementById('symbolInput').value = '';
+
+            // Reset State
+            button.disabled = false;
+            button.textContent = originalText;
+            input.value = '';
         }
     });
 }
@@ -87,18 +99,18 @@ async function loadStocks() {
             fetch(`${API_BASE}/stocks`),
             fetch(`${API_BASE}/dashboard`)
         ]);
-        
+
         const stocks = await stocksResponse.json();
         const dashboard = await dashboardResponse.json();
-        
+
         stocksData = stocks.map(stock => {
             const data = dashboard.find(d => d.symbol === stock.symbol);
             return { ...stock, ...data };
         });
-        
+
         renderStockList(stocksData);
         document.getElementById('stockCount').textContent = stocks.length;
-        
+
         // 現在選択中の銘柄があれば、データを更新
         if (currentStock) {
             const currentData = stocksData.find(s => s.symbol === currentStock);
@@ -118,9 +130,9 @@ async function addStock(symbol) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ symbol })
         });
-        
+
         const data = await response.json();
-        
+
         if (response.ok) {
             await loadStocks();
             showMessage(data.message || '銘柄を追加しました', 'success');
@@ -137,7 +149,7 @@ async function addStock(symbol) {
 async function removeStock(symbol, event) {
     event.stopPropagation();
     if (!confirm(`${symbol}を削除しますか？`)) return;
-    
+
     try {
         const response = await fetch(`${API_BASE}/stocks/${symbol}`, { method: 'DELETE' });
         if (response.ok) {
@@ -159,7 +171,7 @@ async function removeStock(symbol, event) {
 
 function renderStockList(stocks) {
     const listContainer = document.getElementById('stockList');
-    
+
     if (stocks.length === 0) {
         listContainer.innerHTML = `
             <div class="empty-list">
@@ -169,7 +181,7 @@ function renderStockList(stocks) {
         `;
         return;
     }
-    
+
     listContainer.innerHTML = stocks.map(stock => {
         const currencySymbol = stock.currency_symbol || '$';
         const currency = stock.currency || 'USD';
@@ -179,7 +191,7 @@ function renderStockList(stocks) {
         const changeClass = (stock.change || 0) >= 0 ? 'positive' : 'negative';
         const isActive = currentStock === stock.symbol ? 'active' : '';
         const name = stock.name || stock.symbol;
-        
+
         return `
             <div class="stock-item ${isActive}" onclick="selectStock('${stock.symbol}')">
                 <div class="stock-item-info">
@@ -203,7 +215,7 @@ function renderStockList(stocks) {
 function selectStock(symbol) {
     currentStock = symbol;
     currentTab = 'chart';
-    
+
     // リストのアクティブ状態を更新
     document.querySelectorAll('.stock-item').forEach(item => {
         item.classList.remove('active');
@@ -211,27 +223,27 @@ function selectStock(symbol) {
             item.classList.add('active');
         }
     });
-    
+
     showStockDetail(symbol);
 }
 
 async function showStockDetail(symbol) {
     const detailPanel = document.getElementById('stockDetail');
     detailPanel.innerHTML = '<div class="loading"><div class="spinner"></div>読み込み中...</div>';
-    
+
     try {
         const [priceResponse, analysisResponse] = await Promise.all([
             fetch(`${API_BASE}/stocks/${symbol}/price?period=${currentPeriod}`),
             fetch(`${API_BASE}/stocks/${symbol}/analysis?period=${currentPeriod}`)
         ]);
-        
+
         const priceData = await priceResponse.json();
         const analysisData = await analysisResponse.json();
-        
+
         if (!priceResponse.ok) {
             throw new Error(priceData.error || 'データの取得に失敗しました');
         }
-        
+
         renderStockDetail(priceData, analysisData);
     } catch (error) {
         detailPanel.innerHTML = `
@@ -251,19 +263,19 @@ function renderStockDetail(priceData, analysisData) {
     const currency = priceData.currency || 'USD';
     const changeClass = priceData.change >= 0 ? 'positive' : 'negative';
     const changeInfo = formatChange(priceData.change, priceData.change_percent, currencySymbol, currency);
-    
+
     const periodButtons = ['1mo', '3mo', '6mo', '1y', '2y'].map(period => {
         const label = { '1mo': '1M', '3mo': '3M', '6mo': '6M', '1y': '1Y', '2y': '2Y' }[period];
         return `<button class="period-btn ${period === currentPeriod ? 'active' : ''}" onclick="changePeriod('${period}')">${label}</button>`;
     }).join('');
-    
+
     const tabButtons = `
         <button class="tab-btn ${currentTab === 'chart' ? 'active' : ''}" onclick="switchTab('chart')">📈 チャート</button>
         <button class="tab-btn ${currentTab === 'analysis' ? 'active' : ''}" onclick="switchTab('analysis')">📊 分析</button>
         <button class="tab-btn ${currentTab === 'financials' ? 'active' : ''}" onclick="switchTab('financials')">💰 財務</button>
         <button class="tab-btn ${currentTab === 'dividends' ? 'active' : ''}" onclick="switchTab('dividends')">💵 配当</button>
     `;
-    
+
     detailPanel.innerHTML = `
         <div class="detail-container">
             <div class="detail-header">
@@ -288,7 +300,7 @@ function renderStockDetail(priceData, analysisData) {
             <div id="tabContent" class="tab-content"></div>
         </div>
     `;
-    
+
     window.currentPriceData = priceData;
     window.currentAnalysisData = analysisData;
     renderTabContent(currentTab, priceData, analysisData);
@@ -311,7 +323,7 @@ function renderTabContent(tab, priceData, analysisData) {
     const tabContent = document.getElementById('tabContent');
     const currencySymbol = priceData.currency_symbol || '$';
     const currency = priceData.currency || 'USD';
-    
+
     switch (tab) {
         case 'chart': renderChartTab(tabContent, priceData, currencySymbol, currency); break;
         case 'analysis': renderAnalysisTab(tabContent, analysisData, currencySymbol, currency); break;
@@ -337,7 +349,7 @@ function renderChartTab(container, priceData, currencySymbol, currency) {
 
 function renderAnalysisTab(container, analysisData, currencySymbol, currency) {
     const scoreColor = analysisData.score >= 80 ? '#22c55e' : analysisData.score >= 60 ? '#84cc16' : analysisData.score >= 40 ? '#eab308' : analysisData.score >= 20 ? '#f97316' : '#ef4444';
-    
+
     container.innerHTML = `
         <div class="analysis-section">
             <div class="analysis-header">
@@ -373,15 +385,15 @@ function renderAnalysisTab(container, analysisData, currencySymbol, currency) {
 
 async function renderFinancialsTab(container, symbol, currencySymbol, currency) {
     container.innerHTML = '<div class="loading"><div class="spinner"></div>読み込み中...</div>';
-    
+
     try {
         const response = await fetch(`${API_BASE}/stocks/${symbol}/financials`);
         const data = await response.json();
         if (data.error) { container.innerHTML = `<div class="error">${data.error}</div>`; return; }
-        
+
         const cs = data.currency_symbol || currencySymbol;
         const cur = data.currency || currency;
-        
+
         container.innerHTML = `
             <div class="financials-section">
                 <div class="financials-group">
@@ -427,7 +439,7 @@ async function renderFinancialsTab(container, symbol, currencySymbol, currency) 
 
 async function renderDividendsTab(container, symbol, currencySymbol, currency) {
     container.innerHTML = '<div class="loading"><div class="spinner"></div>読み込み中...</div>';
-    
+
     try {
         const response = await fetch(`${API_BASE}/stocks/${symbol}/dividends`);
         const data = await response.json();
@@ -436,11 +448,11 @@ async function renderDividendsTab(container, symbol, currencySymbol, currency) {
             container.innerHTML = `<div class="empty-detail" style="height:auto;padding:40px"><div class="empty-icon">💵</div><h2>配当データなし</h2><p>この銘柄は配当を実施していないか、データがありません</p></div>`;
             return;
         }
-        
+
         const cs = data.currency_symbol || currencySymbol;
         const cur = data.currency || currency;
         const recentDividends = data.dividends.slice(-12).reverse();
-        
+
         container.innerHTML = `
             <div class="dividends-section">
                 <div class="dividend-summary">
@@ -469,13 +481,13 @@ function drawChart(history, currencySymbol = '$', currency = 'USD') {
     const ctx = document.getElementById('priceChart')?.getContext('2d');
     if (!ctx) return;
     if (chart) chart.destroy();
-    
+
     const labels = history.map(d => d.date);
     const closes = history.map(d => d.close);
     const gradient = ctx.createLinearGradient(0, 0, 0, 250);
     gradient.addColorStop(0, 'rgba(102, 126, 234, 0.4)');
     gradient.addColorStop(1, 'rgba(102, 126, 234, 0.0)');
-    
+
     chart = new Chart(ctx, {
         type: 'line',
         data: {
@@ -517,7 +529,7 @@ function drawChart(history, currencySymbol = '$', currency = 'USD') {
 function drawDividendChart(dividends, currencySymbol = '$', currency = 'USD') {
     const ctx = document.getElementById('dividendChart')?.getContext('2d');
     if (!ctx) return;
-    
+
     new Chart(ctx, {
         type: 'bar',
         data: {
@@ -591,18 +603,24 @@ function getVolatilityDescription(v) {
 }
 
 function showMessage(message, type = 'info') {
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    toast.textContent = message;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.classList.add('show'), 100);
-    setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 300); }, 3000);
+    const bgColor = type === 'success' ? '#22c55e' : (type === 'error' ? '#ef4444' : '#667eea');
+
+    Toastify({
+        text: message,
+        duration: 3000,
+        gravity: "top", // `top` or `bottom`
+        position: "right", // `left`, `center` or `right`
+        stopOnFocus: true, // Prevents dismissing of toast on hover
+        style: {
+            background: bgColor,
+            borderRadius: "8px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+            padding: "12px 20px",
+            fontSize: "0.95rem",
+        },
+    }).showToast();
 }
 
 function showError(message) {
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'error-toast';
-    errorDiv.textContent = message;
-    document.querySelector('.main-content').insertBefore(errorDiv, document.querySelector('.main-content').firstChild);
-    setTimeout(() => { errorDiv.classList.add('fade-out'); setTimeout(() => errorDiv.remove(), 300); }, 5000);
+    showMessage(message, 'error');
 }

@@ -1,12 +1,15 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stock Tracking</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+
 <body>
     <div class="app-container">
         <!-- Header -->
@@ -31,7 +34,7 @@
                     <h2>銘柄リスト</h2>
                     <form id="addStockForm" class="add-stock-form">
                         <input type="text" id="symbolInput" placeholder="銘柄コード (例: 7203, AAPL)">
-                        <button type="submit">追加</button>
+                        <button type="submit" id="addStockBtn">追加</button>
                     </form>
                 </div>
                 <div id="stockList" class="stock-list">
@@ -50,6 +53,8 @@
         </main>
     </div>
 
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
     <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
+
 </html>
