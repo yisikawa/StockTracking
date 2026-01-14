@@ -196,12 +196,28 @@ async function loadStocks() {
             fetch(`${API_BASE}/dashboard`)
         ]);
 
+        if (!stocksResponse.ok) throw new Error('Failed to fetch stocks');
         const stocks = await stocksResponse.json();
-        const dashboard = await dashboardResponse.json();
+
+        let dashboard = [];
+        if (dashboardResponse.ok) {
+            try {
+                dashboard = await dashboardResponse.json();
+                if (!Array.isArray(dashboard)) dashboard = [];
+            } catch (e) {
+                console.error('Dashboard parse error:', e);
+            }
+        }
 
         stocksData = stocks.map(stock => {
-            const data = dashboard.find(d => d.symbol === stock.symbol);
-            return { ...stock, ...data };
+            const data = dashboard.find(d => d.symbol === stock.symbol) || {};
+            // データがない場合でも、最低限の情報を保持してエラーにならないようにする
+            return {
+                ...stock,
+                current_price: data.current_price || data.price || 0,
+                change_percent: data.change_percent || 0,
+                ...data
+            };
         });
 
         renderStockList(stocksData);
@@ -217,6 +233,11 @@ async function loadStocks() {
         }
     } catch (error) {
         console.error('銘柄の読み込みに失敗:', error);
+        // エラー時でもリストを表示できるようにする (キャッシュや partial data)
+        const listContainer = document.getElementById('stockList');
+        if (listContainer.innerHTML.trim() === '') {
+            listContainer.innerHTML = '<div class="error-message">データの読み込みに失敗しました。再読み込みしてください。</div>';
+        }
     }
 }
 
