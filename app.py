@@ -20,18 +20,24 @@ from logging.handlers import RotatingFileHandler
 import os
 
 if not app.debug:
-    if not os.path.exists('logs'):
-        os.mkdir('logs')
-    file_handler = RotatingFileHandler('logs/app.log', maxBytes=10240, backupCount=10)
-    file_handler.setFormatter(logging.Formatter(
-        '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
-    ))
-    file_handler.setLevel(logging.INFO)
-    
-    # Configure root logger to capture logs from all modules
-    root_logger = logging.getLogger()
-    root_logger.addHandler(file_handler)
-    root_logger.setLevel(logging.INFO)
+    try:
+        if not os.path.exists('logs'):
+            os.mkdir('logs')
+        file_handler = RotatingFileHandler('logs/app.log', maxBytes=10240, backupCount=10)
+        file_handler.setFormatter(logging.Formatter(
+            '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+        ))
+        file_handler.setLevel(logging.INFO)
+        
+        # Configure root logger to capture logs from all modules
+        root_logger = logging.getLogger()
+        root_logger.addHandler(file_handler)
+        root_logger.setLevel(logging.INFO)
+    except PermissionError:
+        # ログファイルがロックされている場合は標準出力のみにする
+        print("警告: ログファイルへの書き込み権限がありません。標準出力のみを使用します。")
+    except Exception as e:
+        print(f"警告: ログ設定中にエラーが発生しました: {e}")
     
     app.logger.info('StockTracking startup')
 

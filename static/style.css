@@ -380,6 +380,7 @@ input:checked+.slider:before {
 
 .add-stock-form input {
     flex: 1;
+    min-width: 0;
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -407,6 +408,8 @@ input:checked+.slider:before {
     font-weight: 500;
     cursor: pointer;
     transition: transform 0.2s, box-shadow 0.2s;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .add-stock-form button:hover {

@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stock Tracking</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ range(1, 10000) | random }}">
     <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -33,17 +33,7 @@
             </div>
         </header>
 
-        <div class="portfolio-summary-bar">
-            <div class="portfolio-stat">
-                <span class="label">総評価額</span>
-                <span class="value" id="totalPortfolioValue">¥0</span>
-            </div>
-            <div class="portfolio-stat">
-                <span class="label">評価損益</span>
-                <span class="value" id="totalPortfolioGain">¥0</span>
-                <span class="percent" id="totalPortfolioGainPercent">(0.00%)</span>
-            </div>
-        </div>
+
 
         <!-- Main Content: 2-Column Layout -->
         <main class="main-content">

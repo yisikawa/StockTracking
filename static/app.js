@@ -83,35 +83,7 @@ function formatLargeNumber(num, currencySymbol = '$', currency = 'USD') {
 // ========================================
 
 function updatePortfolioSummary(stocks) {
-    let totalValue = 0;
-    let totalCost = 0;
-
-    stocks.forEach(stock => {
-        const qty = stock.quantity || 0;
-        const price = stock.current_price || 0;
-        const avgPrice = stock.avg_price || 0;
-
-        // 簡易計算: 通貨レート変換は未実装のため、単純合算（本来は通貨統一が必要）
-        // ここではすべての価格をそのまま足します
-        if (qty > 0) {
-            totalValue += qty * price;
-            totalCost += qty * avgPrice;
-        }
-    });
-
-    const totalGain = totalValue - totalCost;
-    const gainPercent = totalCost > 0 ? (totalGain / totalCost) * 100 : 0;
-
-    document.getElementById('totalPortfolioValue').textContent = totalValue.toLocaleString('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }); // 仮に円表示
-
-    const gainElement = document.getElementById('totalPortfolioGain');
-    const percentElement = document.getElementById('totalPortfolioGainPercent');
-
-    gainElement.textContent = (totalGain >= 0 ? '+' : '-') + Math.abs(totalGain).toLocaleString('ja-JP', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).replace('JPY', '').trim();
-    percentElement.textContent = `(${totalGain >= 0 ? '+' : ''}${gainPercent.toFixed(2)}%)`;
-
-    gainElement.className = `value ${totalGain >= 0 ? 'text-positive' : 'text-negative'}`;
-    percentElement.className = `percent ${totalGain >= 0 ? 'text-positive' : 'text-negative'}`;
+    // Portfolio summary removed
 }
 
 let editingSymbol = null;
@@ -506,14 +478,14 @@ function renderPortfolioTab(container, priceData, currencySymbol, currency) {
 
 function renderChartTab(container, priceData, currencySymbol, currency) {
     container.innerHTML = `
-        < div class="price-info" >
+        <div class="price-info">
             <div class="info-box"><h4>現在価格</h4><div class="value">${formatPrice(priceData.current_price, currencySymbol, currency)}</div></div>
             <div class="info-box"><h4>前日終値</h4><div class="value">${formatPrice(priceData.previous_close, currencySymbol, currency)}</div></div>
             <div class="info-box"><h4>出来高</h4><div class="value">${formatNumber(priceData.volume)}</div></div>
             <div class="info-box"><h4>時価総額</h4><div class="value">${formatLargeNumber(priceData.market_cap, currencySymbol, currency)}</div></div>
             <div class="info-box"><h4>52週高値</h4><div class="value">${formatPrice(priceData['52_week_high'], currencySymbol, currency)}</div></div>
             <div class="info-box"><h4>52週安値</h4><div class="value">${formatPrice(priceData['52_week_low'], currencySymbol, currency)}</div></div>
-        </div >
+        </div>
         <div class="chart-container"><canvas id="priceChart"></canvas></div>
     `;
     drawChart(priceData.history, currencySymbol, currency);
@@ -523,7 +495,7 @@ function renderAnalysisTab(container, analysisData, currencySymbol, currency) {
     const scoreColor = analysisData.score >= 80 ? '#22c55e' : analysisData.score >= 60 ? '#84cc16' : analysisData.score >= 40 ? '#eab308' : analysisData.score >= 20 ? '#f97316' : '#ef4444';
 
     container.innerHTML = `
-        < div class="analysis-section" >
+        <div class="analysis-section">
             <div class="analysis-header">
                 <div class="analysis-score">
                     <div class="score-circle" style="border-color: ${scoreColor}; color: ${scoreColor}">${Math.round(analysisData.score)}</div>
@@ -551,7 +523,7 @@ function renderAnalysisTab(container, analysisData, currencySymbol, currency) {
                 </div>
                 <div class="analysis-item"><h5>期間内高値/安値</h5><p>${formatPrice(analysisData.price_range.max, currencySymbol, currency)} / ${formatPrice(analysisData.price_range.min, currencySymbol, currency)}</p></div>
             </div>
-        </div >
+        </div>
         `;
 }
 
@@ -559,7 +531,7 @@ async function renderFinancialsTab(container, symbol, currencySymbol, currency) 
     container.innerHTML = '<div class="loading"><div class="spinner"></div>読み込み中...</div>';
 
     try {
-        const response = await fetch(`${API_BASE} /stocks/${symbol}/financials`);
+        const response = await fetch(`${API_BASE}/stocks/${symbol}/financials`);
         const data = await response.json();
         if (data.error) { container.innerHTML = `<div class="error">${data.error}</div>`; return; }
 
