@@ -46,55 +46,55 @@ const AppState = {
     chart: null,
     autoRefreshInterval: null,
     stocksData: [],
-    
+
     // チャート関連の状態
     selectedMAPeriods: [...CHART_CONFIG.MA.defaultSelection],
     maSeries: [],
     lwChart: null,
     currentPriceData: null,
     currentAnalysisData: null,
-    
+
     // 状態更新メソッド
     setCurrentStock(symbol) {
         this.currentStock = symbol;
     },
-    
+
     setPeriod(period) {
         this.currentPeriod = period;
     },
-    
+
     setTab(tab) {
         this.currentTab = tab;
     },
-    
+
     setChart(chartInstance) {
         this.chart = chartInstance;
     },
-    
+
     setAutoRefreshInterval(interval) {
         this.autoRefreshInterval = interval;
     },
-    
+
     setStocksData(data) {
         this.stocksData = data;
     },
-    
+
     setLwChart(chartInstance) {
         this.lwChart = chartInstance;
     },
-    
+
     setMASeries(series) {
         this.maSeries = series;
     },
-    
+
     setSelectedMAPeriods(periods) {
         this.selectedMAPeriods = periods;
     },
-    
+
     setPriceData(data) {
         this.currentPriceData = data;
     },
-    
+
     setAnalysisData(data) {
         this.currentAnalysisData = data;
     }
@@ -258,10 +258,10 @@ async function savePortfolio() {
             }).showToast();
 
             closeEditModal();
-            
+
             // 銘柄リストを更新
             await loadStocks();
-            
+
             // ポートフォリオタブが表示されている場合は再描画
             if (AppState.currentTab === 'portfolio' || currentTab === 'portfolio') {
                 const priceData = AppState.currentPriceData || window.currentPriceData;
@@ -586,7 +586,7 @@ function getTabLabel(tab) {
 function renderTabContent(tab, priceData, analysisData) {
     const tabContent = document.getElementById('tabContent');
     if (!tabContent) return;
-    
+
     // priceDataがnullの場合は、AppStateまたはwindowから取得を試みる
     if (!priceData) {
         priceData = AppState.currentPriceData || window.currentPriceData;
@@ -594,13 +594,13 @@ function renderTabContent(tab, priceData, analysisData) {
     if (!analysisData) {
         analysisData = AppState.currentAnalysisData || window.currentAnalysisData;
     }
-    
+
     // priceDataがまだnullの場合はエラー表示
     if (!priceData) {
         tabContent.innerHTML = '<div class="error">データが読み込まれていません。銘柄を選択してください。</div>';
         return;
     }
-    
+
     const currencySymbol = priceData.currency_symbol || '$';
     const currency = priceData.currency || 'USD';
 
@@ -677,7 +677,7 @@ const Templates = {
             </div>
         `;
     },
-    
+
     /**
      * 移動平均線選択UIを生成
      */
@@ -695,7 +695,7 @@ const Templates = {
                 </label>
             `;
         }).join('');
-        
+
         return `
             <div class="ma-selector">
                 <div class="ma-selector-label">移動平均線:</div>
@@ -705,7 +705,7 @@ const Templates = {
             </div>
         `;
     },
-    
+
     /**
      * チャートコンテナHTMLを生成
      */
@@ -715,11 +715,11 @@ const Templates = {
 };
 
 function renderChartTab(container, priceData, currencySymbol, currency) {
-    container.innerHTML = 
+    container.innerHTML =
         Templates.priceInfo(priceData, currencySymbol, currency) +
         Templates.maSelector(CHART_CONFIG.MA.periods, AppState.selectedMAPeriods) +
         Templates.chartContainer();
-    
+
     // イベントハンドラを設定（イベント委譲）
     container.querySelector('.ma-checkbox-group').addEventListener('change', (e) => {
         if (e.target.classList.contains('ma-period-checkbox')) {
@@ -727,7 +727,7 @@ function renderChartTab(container, priceData, currencySymbol, currency) {
             toggleMAPeriod(period);
         }
     });
-    
+
     drawChart(priceData.history, currencySymbol, currency);
 }
 
@@ -753,6 +753,11 @@ function renderAnalysisTab(container, analysisData, currencySymbol, currency) {
                     <h5>RSI (14日)</h5><p>${analysisData.indicators.rsi.toFixed(2)}</p>
                     <div class="indicator-bar"><div class="indicator-fill" style="width: ${analysisData.indicators.rsi}%; background: ${getRSIColor(analysisData.indicators.rsi)}"></div></div>
                     <small>${getRSIDescription(analysisData.indicators.rsi)}</small>
+                </div>
+                <div class="analysis-item">
+                    <h5>MACD (12, 26, 9)</h5>
+                    <p>${analysisData.indicators.macd ? `${analysisData.indicators.macd.macd.toFixed(2)} / ${analysisData.indicators.macd.signal.toFixed(2)}` : 'N/A'}</p>
+                    <small>ヒストグラム: ${analysisData.indicators.macd ? analysisData.indicators.macd.histogram.toFixed(2) : 'N/A'}</small>
                 </div>
                 <div class="analysis-item"><h5>ボラティリティ</h5><p>${analysisData.indicators.volatility.toFixed(2)}%</p><small>${getVolatilityDescription(analysisData.indicators.volatility)}</small></div>
                 <div class="analysis-item"><h5>移動平均（20日）</h5><p>${formatPrice(analysisData.moving_averages.ma_20, currencySymbol, currency)}</p></div>
@@ -879,7 +884,7 @@ const DataTransformer = {
             close: d.close
         }));
     },
-    
+
     /**
      * 出来高形式に変換
      * @param {Array} history - 履歴データ配列
@@ -892,7 +897,7 @@ const DataTransformer = {
             color: d.close >= d.open ? CHART_CONFIG.VOLUME.upColor : CHART_CONFIG.VOLUME.downColor
         }));
     },
-    
+
     /**
      * 移動平均形式に変換
      * @param {Array} history - 履歴データ配列
@@ -902,7 +907,7 @@ const DataTransformer = {
     toMA(history, period) {
         const maData = [];
         const closes = history.map(d => d.close);
-        
+
         for (let i = 0; i < history.length; i++) {
             if (i >= period - 1) {
                 // 過去period日間の平均を計算（計算できる場合のみ追加）
@@ -912,7 +917,7 @@ const DataTransformer = {
             }
             // 期間に満たない場合は追加しない（非表示）
         }
-        
+
         return maData;
     }
 };
@@ -953,12 +958,12 @@ const ChartManager = {
                 vertLines: { visible: false },
                 horzLines: { color: 'rgba(255,255,255,0.05)' },
             },
-            crosshair: { 
+            crosshair: {
                 mode: LightweightCharts.CrosshairMode.Normal,
                 vertLine: { labelVisible: true },
                 horzLine: { labelVisible: true }
             },
-            rightPriceScale: { 
+            rightPriceScale: {
                 borderVisible: false,
                 scaleMargins: { top: 0.1, bottom: 0.1 }
             },
@@ -967,7 +972,7 @@ const ChartManager = {
                 borderVisible: false,
                 scaleMargins: { top: 0.8, bottom: 0 }
             },
-            timeScale: { 
+            timeScale: {
                 borderVisible: false,
                 timeVisible: true,
                 secondsVisible: false
@@ -1016,7 +1021,7 @@ const ChartManager = {
     renderVolume(history) {
         this.series.volume = this.chart.addHistogramSeries({
             color: '#26a69a',
-            priceFormat: { 
+            priceFormat: {
                 type: 'volume',
                 precision: 0,
                 minMove: 1
@@ -1077,10 +1082,10 @@ const ChartManager = {
 function drawChart(history, currencySymbol = '$', currency = 'USD') {
     const chartElement = document.getElementById('candlestickChart');
     if (!chartElement) return;
-    
+
     // ChartManagerを使用してチャートを描画
     const newChart = ChartManager.draw(chartElement, history, AppState.selectedMAPeriods);
-    
+
     // AppStateに保存（互換性のため）
     AppState.setLwChart(newChart);
     AppState.setMASeries(ChartManager.series.ma);
@@ -1097,7 +1102,7 @@ function toggleMAPeriod(period) {
     // AppStateから現在の選択状態を取得
     const currentPeriods = [...AppState.selectedMAPeriods];
     const index = currentPeriods.indexOf(period);
-    
+
     if (index > -1) {
         // 既に選択されている場合は削除
         currentPeriods.splice(index, 1);
@@ -1114,19 +1119,19 @@ function toggleMAPeriod(period) {
             return;
         }
     }
-    
+
     // AppStateを更新
     AppState.setSelectedMAPeriods(currentPeriods);
     // グローバル変数も同期（互換性のため）
     selectedMAPeriods = [...currentPeriods];
-    
+
     // チャートを再描画
     // AppStateまたはwindowからpriceDataを取得
     const priceData = AppState.currentPriceData || window.currentPriceData;
     if (priceData && priceData.history) {
-        drawChart(priceData.history, 
-                  priceData.currency_symbol || '$', 
-                  priceData.currency || 'USD');
+        drawChart(priceData.history,
+            priceData.currency_symbol || '$',
+            priceData.currency || 'USD');
     } else {
         console.warn('価格データが読み込まれていません');
     }

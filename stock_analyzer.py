@@ -6,7 +6,8 @@ from config import (
     SCORE_EXCELLENT, SCORE_GOOD, SCORE_FAIR, SCORE_POOR,
     VOLATILITY_LOW, VOLATILITY_HIGH,
     RSI_OVERSOLD, RSI_OVERBOUGHT,
-    PRICE_POSITION_LOW, PRICE_POSITION_HIGH
+    PRICE_POSITION_LOW, PRICE_POSITION_HIGH,
+    MACD_FAST, MACD_SLOW, MACD_SIGNAL
 )
 
 
@@ -29,6 +30,21 @@ class StockAnalyzer:
         returns = closes.pct_change().dropna()
         volatility = float(returns.std() * (TRADING_DAYS_PER_YEAR ** 0.5)) * 100
         return volatility
+    
+    @staticmethod
+    def calculate_macd(closes: pd.Series, fast: int = MACD_FAST, slow: int = MACD_SLOW, signal: int = MACD_SIGNAL) -> Dict[str, float]:
+        """MACDを計算"""
+        exp1 = closes.ewm(span=fast, adjust=False).mean()
+        exp2 = closes.ewm(span=slow, adjust=False).mean()
+        macd = exp1 - exp2
+        signal_line = macd.ewm(span=signal, adjust=False).mean()
+        histogram = macd - signal_line
+        
+        return {
+            'macd': float(macd.iloc[-1]) if not macd.empty else 0.0,
+            'signal': float(signal_line.iloc[-1]) if not signal_line.empty else 0.0,
+            'histogram': float(histogram.iloc[-1]) if not histogram.empty else 0.0
+        }
     
     @staticmethod
     def calculate_moving_averages(closes: pd.Series, short: int = MA_SHORT, long: int = MA_LONG) -> Dict[str, float]:
@@ -138,6 +154,9 @@ class StockAnalyzer:
         
         # 標準偏差
         price_std = float(closes.std())
+
+        # MACD
+        macd = StockAnalyzer.calculate_macd(closes)
         
         # スコア計算
         score = StockAnalyzer.calculate_score(
@@ -157,7 +176,8 @@ class StockAnalyzer:
             'indicators': {
                 'rsi': rsi,
                 'volatility': volatility,
-                'price_std': price_std
+                'price_std': price_std,
+                'macd': macd
             },
             'score': score,
             'level': level_info['level'],

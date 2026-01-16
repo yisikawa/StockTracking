@@ -87,7 +87,10 @@ class Config:
                 "rsi_oversold": 30.0,
                 "rsi_overbought": 70.0,
                 "price_position_low": 0.3,
-                "price_position_high": 0.7
+                "price_position_high": 0.7,
+                "macd_fast": 12,
+                "macd_slow": 26,
+                "macd_signal": 9
             },
             "yahoo_auth": {"enabled": False, "cookie": "", "username": "", "password": ""},
             "server": {"host": "localhost", "port": 5000, "debug": True}
@@ -133,6 +136,11 @@ RSI_PERIOD: Final[int] = _config_instance.get('analysis', 'rsi_period', default=
 MA_SHORT: Final[int] = _config_instance.get('analysis', 'ma_short', default=20)
 MA_LONG: Final[int] = _config_instance.get('analysis', 'ma_long', default=50)
 TRADING_DAYS_PER_YEAR: Final[int] = _config_instance.get('analysis', 'trading_days_per_year', default=252)
+
+# MACD設定
+MACD_FAST: Final[int] = _config_instance.get('analysis', 'macd_fast', default=12)
+MACD_SLOW: Final[int] = _config_instance.get('analysis', 'macd_slow', default=26)
+MACD_SIGNAL: Final[int] = _config_instance.get('analysis', 'macd_signal', default=9)
 
 # スコア評価の閾値
 SCORE_EXCELLENT: Final[int] = _config_instance.get('analysis', 'score_excellent', default=80)
