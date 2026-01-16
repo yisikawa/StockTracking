@@ -798,6 +798,69 @@ input:checked+.slider:before {
 }
 
 /* Chart Container */
+/* 移動平均線選択UI */
+.ma-selector {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 16px 0;
+    padding: 12px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    flex-wrap: wrap;
+}
+
+.ma-selector-label {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.ma-checkbox-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.ma-checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.ma-checkbox-label:hover {
+    background: var(--bg-card);
+    border-color: var(--accent-primary);
+    color: var(--text-primary);
+}
+
+.ma-checkbox-label input[type="checkbox"] {
+    cursor: pointer;
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent-primary);
+}
+
+.ma-checkbox-label input[type="checkbox"]:checked + span {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.ma-checkbox-label:has(input[type="checkbox"]:checked) {
+    background: rgba(102, 126, 234, 0.15);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
+}
+
 .chart-container {
     background: var(--bg-secondary);
     border-radius: 12px;

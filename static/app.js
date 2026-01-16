@@ -3,7 +3,7 @@ const API_BASE = '/api';
 // アプリケーション状態管理オブジェクト
 const AppState = {
     currentStock: null,
-    currentPeriod: '1mo',
+    currentPeriod: '3mo',
     currentTab: 'chart',
     chart: null,
     autoRefreshInterval: null,
@@ -38,11 +38,14 @@ const AppState = {
 // 既存コードとの互換性のため、グローバル変数も維持
 // 将来的にはAppStateに統一することを推奨
 let currentStock = null;
-let currentPeriod = '1mo';
+let currentPeriod = '3mo';
 let currentTab = 'chart';
-let chart = null;
+let chart = null;  // Chart.js用（配当チャートなど）
+let lwChart = null;  // Lightweight Charts用（価格チャート）
 let autoRefreshInterval = null;
 let stocksData = [];
+let selectedMAPeriods = [5, 15];  // 選択された移動平均線の期間（最大2本）
+let maSeries = [];  // 移動平均線のシリーズを管理
 
 // 初期化
 document.addEventListener('DOMContentLoaded', () => {
@@ -531,6 +534,22 @@ function renderPortfolioTab(container, priceData, currencySymbol, currency) {
 }
 
 function renderChartTab(container, priceData, currencySymbol, currency) {
+    // 移動平均線の期間選択UIを生成（5日単位で5日から50日まで）
+    const maPeriods = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50];
+    const maSelector = maPeriods.map(period => {
+        const isSelected = selectedMAPeriods.includes(period);
+        return `
+            <label class="ma-checkbox-label">
+                <input type="checkbox" 
+                       class="ma-period-checkbox" 
+                       value="${period}" 
+                       ${isSelected ? 'checked' : ''}
+                       onchange="toggleMAPeriod(${period})">
+                <span>MA${period}</span>
+            </label>
+        `;
+    }).join('');
+    
     container.innerHTML = `
         <div class="price-info">
             <div class="info-box"><h4>現在価格</h4><div class="value">${formatPrice(priceData.current_price, currencySymbol, currency)}</div></div>
@@ -540,7 +559,13 @@ function renderChartTab(container, priceData, currencySymbol, currency) {
             <div class="info-box"><h4>52週高値</h4><div class="value">${formatPrice(priceData['52_week_high'], currencySymbol, currency)}</div></div>
             <div class="info-box"><h4>52週安値</h4><div class="value">${formatPrice(priceData['52_week_low'], currencySymbol, currency)}</div></div>
         </div>
-        <div class="chart-container"><canvas id="priceChart"></canvas></div>
+        <div class="ma-selector">
+            <div class="ma-selector-label">移動平均線:</div>
+            <div class="ma-checkbox-group">
+                ${maSelector}
+            </div>
+        </div>
+        <div class="chart-container"><div id="candlestickChart" style="height: 400px;"></div></div>
     `;
     drawChart(priceData.history, currencySymbol, currency);
 }
@@ -675,53 +700,189 @@ async function renderDividendsTab(container, symbol, currencySymbol, currency) {
 // チャート描画
 // ========================================
 
-function drawChart(history, currencySymbol = '$', currency = 'USD') {
-    const ctx = document.getElementById('priceChart')?.getContext('2d');
-    if (!ctx) return;
-    if (chart) chart.destroy();
-
-    const labels = history.map(d => d.date);
+/**
+ * 移動平均を計算
+ * @param {Array} history - 履歴データ配列
+ * @param {number} period - 期間（日数）
+ * @returns {Array} 移動平均データ配列（計算できない期間は除外）
+ */
+function calculateMovingAverage(history, period) {
+    const maData = [];
     const closes = history.map(d => d.close);
-    const gradient = ctx.createLinearGradient(0, 0, 0, 250);
-    gradient.addColorStop(0, 'rgba(102, 126, 234, 0.4)');
-    gradient.addColorStop(1, 'rgba(102, 126, 234, 0.0)');
+    
+    for (let i = 0; i < history.length; i++) {
+        if (i >= period - 1) {
+            // 過去period日間の平均を計算（計算できる場合のみ追加）
+            const sum = closes.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0);
+            const average = sum / period;
+            maData.push({ time: history[i].date, value: average });
+        }
+        // 期間に満たない場合は追加しない（非表示）
+    }
+    
+    return maData;
+}
 
-    chart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: '終値',
-                data: closes,
-                borderColor: '#667eea',
-                backgroundColor: gradient,
-                borderWidth: 2,
-                fill: true,
-                tension: 0.4,
-                pointRadius: 0,
-                pointHoverRadius: 5,
-                pointHoverBackgroundColor: '#667eea'
-            }]
+function drawChart(history, currencySymbol = '$', currency = 'USD') {
+    const chartElement = document.getElementById('candlestickChart');
+    if (!chartElement) return;
+    
+    // 既存の移動平均線シリーズをクリア（チャート削除前に）
+    maSeries = [];
+    
+    // 既存のチャートを破棄
+    if (lwChart) {
+        try {
+            lwChart.remove();
+        } catch (e) {
+            console.warn('チャートの削除に失敗:', e);
+        }
+        lwChart = null;
+    }
+    
+    // Lightweight Chartsのチャートを作成
+    lwChart = LightweightCharts.createChart(chartElement, {
+        layout: {
+            background: { color: 'transparent' },
+            textColor: '#64748b',
         },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { intersect: false, mode: 'index' },
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    backgroundColor: 'rgba(0,0,0,0.8)',
-                    padding: 10,
-                    displayColors: false,
-                    callbacks: { label: ctx => formatPrice(ctx.parsed.y, currencySymbol, currency) }
-                }
+        grid: {
+            vertLines: { visible: false },
+            horzLines: { color: 'rgba(255,255,255,0.05)' },
+        },
+        crosshair: { 
+            mode: LightweightCharts.CrosshairMode.Normal,
+            vertLine: {
+                labelVisible: true,
             },
-            scales: {
-                x: { grid: { display: false }, ticks: { maxTicksLimit: 6, color: '#64748b' } },
-                y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', callback: v => formatPrice(v, currencySymbol, currency) } }
+            horzLine: {
+                labelVisible: true,
             }
+        },
+        rightPriceScale: { 
+            borderVisible: false,
+            scaleMargins: { top: 0.1, bottom: 0.1 }
+        },
+        leftPriceScale: {
+            visible: true,
+            borderVisible: false,
+            scaleMargins: { top: 0.8, bottom: 0 }
+        },
+        timeScale: { 
+            borderVisible: false,
+            timeVisible: true,
+            secondsVisible: false
+        },
+    });
+
+    // ローソク足シリーズを追加
+    const candlestickSeries = lwChart.addCandlestickSeries({
+        upColor: '#22c55e',
+        downColor: '#ef4444',
+        borderDownColor: '#ef4444',
+        borderUpColor: '#22c55e',
+        wickDownColor: '#ef4444',
+        wickUpColor: '#22c55e',
+    });
+
+    // データを整形（Lightweight Chartsの形式に変換）
+    const data = history.map(d => ({
+        time: d.date,  // 'YYYY-MM-DD'形式
+        open: d.open,
+        high: d.high,
+        low: d.low,
+        close: d.close
+    }));
+
+    candlestickSeries.setData(data);
+    
+    // 出来高バーを追加（左側の価格スケールを使用）
+    const volumeSeries = lwChart.addHistogramSeries({
+        color: '#26a69a',
+        priceFormat: { 
+            type: 'volume',
+            precision: 0,
+            minMove: 1
+        },
+        priceScaleId: 'left',  // 左側の価格スケールを使用
+        scaleMargins: { top: 0.8, bottom: 0 },
+    });
+    
+    const volumeData = history.map(d => ({
+        time: d.date,
+        value: d.volume,
+        color: d.close >= d.open ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)'
+    }));
+    
+    volumeSeries.setData(volumeData);
+    
+    // 移動平均線シリーズは既にクリア済み（チャート再作成時に）
+    
+    // 選択された移動平均線を追加
+    const colors = [
+        '#fbbf24',  // 黄色
+        '#8b5cf6',  // 紫色
+        '#3b82f6',  // 青色
+        '#10b981',  // 緑色
+        '#f59e0b',  // オレンジ色
+        '#ef4444',  // 赤色
+        '#06b6d4',  // シアン
+        '#a855f7',  // 紫
+        '#ec4899',  // ピンク
+        '#14b8a6'   // ティール
+    ];
+    
+    selectedMAPeriods.forEach((period, index) => {
+        const maData = calculateMovingAverage(history, period);
+        if (maData.length > 0) {
+            const maSeriesItem = lwChart.addLineSeries({
+                color: colors[index % colors.length],
+                lineWidth: 2,
+                title: `MA${period}`,
+                priceLineVisible: false,
+                lastValueVisible: true,
+            });
+            maSeriesItem.setData(maData);
+            maSeries.push(maSeriesItem);
         }
     });
+    
+    // チャートをデータに合わせて調整
+    lwChart.timeScale().fitContent();
+    
+    // AppStateにも保存（互換性のため）
+    AppState.setChart(lwChart);
+}
+
+/**
+ * 移動平均線の期間をトグル
+ * @param {number} period - 移動平均線の期間
+ */
+function toggleMAPeriod(period) {
+    const index = selectedMAPeriods.indexOf(period);
+    if (index > -1) {
+        // 既に選択されている場合は削除
+        selectedMAPeriods.splice(index, 1);
+    } else {
+        // 最大2本まで選択可能
+        if (selectedMAPeriods.length < 2) {
+            selectedMAPeriods.push(period);
+            selectedMAPeriods.sort((a, b) => a - b);  // 昇順でソート
+        } else {
+            // 既に2本選択されている場合は、チェックボックスを元に戻す
+            const checkbox = document.querySelector(`input.ma-period-checkbox[value="${period}"]`);
+            if (checkbox) checkbox.checked = false;
+            alert('移動平均線は最大2本まで選択できます');
+            return;
+        }
+    }
+    
+    // チャートを再描画
+    if (window.currentPriceData && lwChart) {
+        drawChart(window.currentPriceData.history, 
+                  window.currentPriceData.currency_symbol || '$', 
+                  window.currentPriceData.currency || 'USD');
+    }
 }
 
 function drawDividendChart(dividends, currencySymbol = '$', currency = 'USD') {
