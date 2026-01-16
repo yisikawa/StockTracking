@@ -148,6 +148,7 @@ def get_dividends(symbol: str):
         return jsonify({'error': f'配当データの取得に失敗しました: {str(e)}'}), 500
 
 
+
 @app.route('/api/stocks/<path:symbol>/financials', methods=['GET'])
 def get_financials(symbol: str):
     """財務情報を取得"""
@@ -160,6 +161,32 @@ def get_financials(symbol: str):
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': f'財務データの取得に失敗しました: {str(e)}'}), 500
+
+
+@app.route('/api/stocks/<path:symbol>/prediction', methods=['GET'])
+def predict_stock(symbol: str):
+    """株価予測を実行"""
+    symbol = normalize_symbol(symbol)
+    periods = int(request.args.get('periods', 30))
+    
+    try:
+        # 学習用に長期間のデータを取得（3年分）
+        hist = StockAPI.get_history(symbol, '2y')
+        if hist is None or hist.empty:
+            return jsonify({'error': '予測に必要なデータが見つかりません'}), 404
+        
+        # データ数が少なすぎる場合はエラー
+        if len(hist) < 30:
+            return jsonify({'error': 'データ不足のため予測できません'}), 400
+            
+        from stock_predictor import StockPredictor
+        predictor = StockPredictor()
+        prediction = predictor.predict(hist, periods=periods)
+        
+        return jsonify(prediction)
+    except Exception as e:
+        return jsonify({'error': f'予測の実行に失敗しました: {str(e)}'}), 500
+
 
 
 @app.route('/api/stocks/search', methods=['GET'])

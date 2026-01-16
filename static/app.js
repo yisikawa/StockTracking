@@ -534,6 +534,7 @@ function renderStockDetail(priceData, analysisData) {
         <button class="tab-btn ${currentTab === 'financials' ? 'active' : ''}" onclick="switchTab('financials')">🏢 財務</button>
         <button class="tab-btn ${currentTab === 'dividends' ? 'active' : ''}" onclick="switchTab('dividends')">💵 配当</button>
         <button class="tab-btn ${currentTab === 'portfolio' ? 'active' : ''}" onclick="switchTab('portfolio')">💼 保有状況</button>
+        <button class="tab-btn ${currentTab === 'prediction' ? 'active' : ''}" onclick="switchTab('prediction')">🔮 予測</button>
     `;
 
     detailPanel.innerHTML = `
@@ -610,6 +611,7 @@ function renderTabContent(tab, priceData, analysisData) {
         case 'financials': renderFinancialsTab(tabContent, priceData.symbol, currencySymbol, currency); break;
         case 'dividends': renderDividendsTab(tabContent, priceData.symbol, currencySymbol, currency); break;
         case 'portfolio': renderPortfolioTab(tabContent, priceData, currencySymbol, currency); break;
+        case 'prediction': renderPredictionTab(tabContent, priceData.symbol, currencySymbol, currency); break;
     }
 }
 
@@ -1234,4 +1236,154 @@ function showMessage(message, type = 'info') {
 
 function showError(message) {
     showMessage(message, 'error');
+}
+
+async function renderPredictionTab(container, symbol, currencySymbol, currency) {
+    container.innerHTML = '<div class="loading"><div class="spinner"></div>AI予測を計算中... (数秒かかります)</div>';
+
+    try {
+        const response = await fetch(`${API_BASE}/stocks/${symbol}/prediction?periods=30`);
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || '予測データの取得に失敗しました');
+        }
+
+        const lastPrice = data.current_price;
+        const nextDay = data.summary.next_day;
+        const trendIcon = nextDay.trend_direction === '上昇' ? '📈' : '📉';
+        const trendClass = nextDay.diff >= 0 ? 'text-positive' : 'text-negative';
+
+        container.innerHTML = `
+            <div class="prediction-section">
+                <div class="prediction-header">
+                    <div class="prediction-summary-card">
+                        <div class="card-title">翌営業日 (${nextDay.date}) の予測</div>
+                        <div class="card-main-value ${trendClass}">
+                            ${formatPrice(nextDay.price, currencySymbol, currency)}
+                            <span class="trend-icon">${trendIcon}</span>
+                        </div>
+                        <div class="card-sub-value">
+                            予想変動: ${nextDay.diff >= 0 ? '+' : ''}${formatPrice(nextDay.diff, currencySymbol, currency)} 
+                            (${nextDay.diff >= 0 ? '+' : ''}${nextDay.diff_percent}%)
+                        </div>
+                        <div class="confidence-interval">
+                            信頼区間: ${formatPrice(nextDay.range_low, currencySymbol, currency)} 〜 ${formatPrice(nextDay.range_high, currencySymbol, currency)}
+                        </div>
+                    </div>
+                    <div class="prediction-note">
+                        <small>※ この予測はProphetモデル（ベイズ推定）による統計的な推計値です。投資の確実な利益を保証するものではありません。</small>
+                    </div>
+                </div>
+                <div class="chart-container" style="position: relative; height: 400px; width: 100%;">
+                    <canvas id="predictionChart"></canvas>
+                </div>
+            </div>
+        `;
+
+        // チャート描画
+        const ctx = document.getElementById('predictionChart').getContext('2d');
+
+        // データセットの準備
+        // Chart.jsで信頼区間を描画:
+        // 1. Upper Bound (fill: '+1' -> 下のデータセットへ塗りつぶし? V3では 'origin' or index. Stacked? No)
+        // 一般的な方法: 
+        // Dataset 1: Mean (Line)
+        // Dataset 2: Upper (Transparent Line, fill: '+1' -> fill to required dataset? No, '1' means dataset index 1? No 'origin', 'start', 'end', or boolean/string)
+        // Docs: fill: {target: 'origin' | 'start' | 'end' | number (dataset index) | boolean }
+
+        // 構成:
+        // 0: Upper Bound (Line transparent, fill: 1) -> Fills area between 0 and 1
+        // 1: Lower Bound (Line transparent, fill: false)
+        // 2: Mean (Line visible)
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.dates,
+                datasets: [
+                    {
+                        label: '予測上限 (Upper)',
+                        data: data.forecast.upper,
+                        borderColor: 'transparent',
+                        backgroundColor: 'rgba(102, 126, 234, 0.2)', // Fill color
+                        pointRadius: 0,
+                        fill: 1, // Fill to dataset index 1 (Lower)
+                        tension: 0.4
+                    },
+                    {
+                        label: '予測下限 (Lower)',
+                        data: data.forecast.lower,
+                        borderColor: 'transparent',
+                        pointRadius: 0,
+                        fill: false,
+                        tension: 0.4
+                    },
+                    {
+                        label: '予測値 (Forecast)',
+                        data: data.forecast.yhat,
+                        borderColor: '#667eea',
+                        backgroundColor: '#667eea',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        fill: false,
+                        tension: 0.4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    intersect: false,
+                    mode: 'index',
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        labels: {
+                            filter: function (item, chart) {
+                                // Upper/Lowerのラベルは隠して、予測値だけ見せる、あるいはまとめて見せる
+                                return item.text === '予測値 (Forecast)';
+                            }
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function (context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.y !== null) {
+                                    label += formatPrice(context.parsed.y, currencySymbol, currency);
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.05)'
+                        }
+                    },
+                    y: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.05)'
+                        },
+                        ticks: {
+                            callback: function (value) {
+                                return formatPrice(value, currencySymbol, currency);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+    } catch (error) {
+        container.innerHTML = `<div class="error">予測の生成に失敗しました: ${error.message}</div>`;
+    }
 }
