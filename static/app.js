@@ -1,6 +1,42 @@
 const API_BASE = '/api';
 
-// グローバル状態
+// アプリケーション状態管理オブジェクト
+const AppState = {
+    currentStock: null,
+    currentPeriod: '1mo',
+    currentTab: 'chart',
+    chart: null,
+    autoRefreshInterval: null,
+    stocksData: [],
+    
+    // 状態更新メソッド
+    setCurrentStock(symbol) {
+        this.currentStock = symbol;
+    },
+    
+    setPeriod(period) {
+        this.currentPeriod = period;
+    },
+    
+    setTab(tab) {
+        this.currentTab = tab;
+    },
+    
+    setChart(chartInstance) {
+        this.chart = chartInstance;
+    },
+    
+    setAutoRefreshInterval(interval) {
+        this.autoRefreshInterval = interval;
+    },
+    
+    setStocksData(data) {
+        this.stocksData = data;
+    }
+};
+
+// 既存コードとの互換性のため、グローバル変数も維持
+// 将来的にはAppStateに統一することを推奨
 let currentStock = null;
 let currentPeriod = '1mo';
 let currentTab = 'chart';
@@ -311,7 +347,7 @@ function renderStockList(stocks) {
         const name = stock.name || stock.symbol;
 
         return `
-            <div class="stock-item ${isActive}" onclick="selectStock('${stock.symbol}')">
+            <div class="stock-item ${isActive}" data-symbol="${stock.symbol}" onclick="selectStock('${stock.symbol}')">
                 <div class="stock-item-info">
                     <div class="stock-item-symbol">${stock.symbol}</div>
                     <div class="stock-item-name">${name}</div>
@@ -336,10 +372,7 @@ function selectStock(symbol) {
 
     // リストのアクティブ状態を更新
     document.querySelectorAll('.stock-item').forEach(item => {
-        item.classList.remove('active');
-        if (item.onclick && item.onclick.toString().includes(symbol)) {
-            item.classList.add('active');
-        }
+        item.classList.toggle('active', item.dataset.symbol === symbol);
     });
 
     showStockDetail(symbol);
@@ -384,7 +417,7 @@ function renderStockDetail(priceData, analysisData) {
 
     const periodButtons = ['1mo', '3mo', '6mo', '1y', '2y'].map(period => {
         const label = { '1mo': '1M', '3mo': '3M', '6mo': '6M', '1y': '1Y', '2y': '2Y' }[period];
-        return `<button class="period-btn ${period === currentPeriod ? 'active' : ''}" onclick="changePeriod('${period}')">${label}</button>`;
+        return `<button class="period-btn ${period === currentPeriod ? 'active' : ''}" onclick="changePeriod('${period}', event)">${label}</button>`;
     }).join('');
 
     const tabButtons = `
@@ -714,7 +747,7 @@ function drawDividendChart(dividends, currencySymbol = '$', currency = 'USD') {
 // ヘルパー関数
 // ========================================
 
-function changePeriod(period) {
+function changePeriod(period, event) {
     currentPeriod = period;
     document.querySelectorAll('.period-btn').forEach(btn => btn.classList.remove('active'));
     event.target.classList.add('active');

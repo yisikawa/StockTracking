@@ -100,18 +100,21 @@ class Database:
             db_session.rollback()
     
     def get_cached_history(self, symbol: str, days: int = HISTORY_DAYS) -> List[Dict]:
-        """データベースから履歴データを取得"""
+        """データベースから履歴データを取得（日付ベース）"""
         try:
+            from datetime import datetime, timedelta
+            cutoff_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
             prices = db_session.query(StockPrice)\
                 .filter_by(symbol=symbol.upper())\
+                .filter(StockPrice.date >= cutoff_date)\
                 .order_by(StockPrice.date.desc())\
-                .limit(days).all()
+                .all()
             return [price.to_dict() for price in prices]
         except Exception as e:
             logger.error(f"Error getting cached history: {e}")
             return []
     
-    def save_price_history(self, symbol: str, price_data: List[Dict], days: int = 30):
+    def save_price_history(self, symbol: str, price_data: List[Dict], days: int = HISTORY_DAYS):
         """価格履歴を保存"""
         try:
             for item in price_data[-days:]:

@@ -1,7 +1,7 @@
 """アプリケーション設定 - コンフィグファイルから読み込み"""
 import json
 import os
-from typing import Final, Optional
+from typing import Final, Optional, List
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -163,3 +163,7 @@ USE_YAHOO_AUTH: Final[bool] = YAHOO_AUTH_ENABLED and bool(YAHOO_COOKIE or (YAHOO
 SERVER_HOST: Final[str] = _config_instance.get('server', 'host', default='localhost')
 SERVER_PORT: Final[int] = _config_instance.get('server', 'port', default=5000)
 SERVER_DEBUG: Final[bool] = _config_instance.get('server', 'debug', default=True)
+
+# 本番環境設定
+IS_PRODUCTION: Final[bool] = os.getenv('FLASK_ENV') == 'production'
+ALLOWED_ORIGINS: Final[List[str]] = os.getenv('ALLOWED_ORIGINS', 'http://localhost:5000').split(',')

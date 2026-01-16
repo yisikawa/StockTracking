@@ -14,6 +14,40 @@ import time
 logger = logging.getLogger(__name__)
 
 
+class ResponseBuilder:
+    """APIレスポンス構築ヘルパー"""
+    
+    @staticmethod
+    def build_base_response(symbol: str) -> Dict:
+        """基本レスポンスを構築"""
+        normalized = normalize_symbol(symbol)
+        currency = get_currency(normalized)
+        return {
+            'symbol': normalized,
+            'currency': currency,
+            'currency_symbol': SymbolUtils.get_currency_symbol(currency),
+            'market': SymbolUtils.get_market_name(normalized),
+        }
+    
+    @staticmethod
+    def add_price_info(response: Dict, hist: pd.DataFrame) -> Dict:
+        """価格情報を追加"""
+        if hist is None or hist.empty:
+            return response
+        
+        current_price, previous_close, change, change_percent = \
+            StockAPI.calculate_price_change(hist)
+        
+        response.update({
+            'current_price': current_price,
+            'previous_close': previous_close,
+            'change': change,
+            'change_percent': change_percent,
+            'volume': int(hist['Volume'].iloc[-1]),
+        })
+        return response
+
+
 class StockAPI:
     """株価API操作クラス"""
     
@@ -375,7 +409,9 @@ class StockAPI:
                 # ランダムな遅延を入れる（レート制限回避のため）
                 # 並列実行のため、開始タイミングを少しずらす
                 if delay > 0:
-                    time.sleep(delay) 
+                    import random
+                    jitter = random.uniform(0, delay * 0.5)  # 0〜50%のランダム遅延を追加
+                    time.sleep(delay + jitter) 
                 result = get_stock_price_with_fallback(symbol, use_cache=False)
                 if result is None:
                     return {
