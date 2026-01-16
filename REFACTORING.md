@@ -640,3 +640,383 @@ StockTracking/
 | 2026-01-16 | 6.2 状態整理 | - | app.js: AppStateオブジェクトを追加（既存コードとの互換性維持） |
 | 2026-01-16 | 5.1 レスポンス共通化 | - | stock_api.py: ResponseBuilderクラスを追加 |
 | 2026-01-16 | 3.2 サービス層導入 | - | services/stock_service.pyを新規作成、app.pyのビジネスロジックを移行 |
+| 2026-01-16 | Phase 1: チャート設定定数化 | - | CHART_CONFIGオブジェクトを追加、ハードコード値を定数化 |
+| 2026-01-16 | Phase 2: AppState統合 | - | チャート関連状態をAppStateに統合、同期ヘルパー関数を追加 |
+| 2026-01-16 | Phase 3: データ変換ユーティリティ | - | DataTransformerオブジェクトを追加、OHLC/Volume/MA変換を分離 |
+| 2026-01-16 | Phase 4: ChartManager導入 | - | drawChart関数をChartManagerクラスに分割、責務を明確化 |
+| 2026-01-16 | Phase 5: テンプレート・イベント整理 | - | Templatesオブジェクトを追加、イベント委譲パターンを導入 |
+
+---
+
+## 追加リファクタリング提案（2026-01-16）
+
+### 1. チャート描画の責務分離 [優先度: 高]
+- `drawChart`の責務が多いため、`createChart`/`renderCandles`/`renderVolume`/`renderMAs`に分割
+- `static/app.js`内に`ChartRenderer`相当のモジュールを作成し可読性を向上
+
+### 2. UI状態の一元管理 [優先度: 高]
+- `currentPeriod`/`selectedMAPeriods`/`currentTab`を`AppState`に統合
+- `window.currentPriceData`を`AppState.currentPriceData`へ移動しグローバル依存を削減
+
+### 3. 移動平均設定の定数化 [優先度: 中]
+- 5日刻みの期間リストや「最大2本」の制限を定数化
+- UI生成とルールを分離（例: `MA_CONFIG = { allowed, max }`）
+
+### 4. シリーズ管理の統一 [優先度: 中]
+- MA以外（ローソク足/出来高）も含め、シリーズ破棄の統一ロジックを導入
+- 再描画時のシリーズ参照切れを防止
+
+### 5. データ変換ユーティリティ化 [優先度: 中]
+- `history`からOHLC/出来高への変換処理をユーティリティとして分離
+- 将来のデータ形式変更に強い構成にする
+
+### 6. UIテンプレート分割 [優先度: 低]
+- `renderChartTab`のHTML生成を関数分割（価格情報/MA選択/チャート）
+- DOM生成とイベントバインドを分離して保守性を向上
+
+### 7. 設定の外部化 [優先度: 低]
+- 初期値（期間: 3mo、MA: 5/15）を設定ファイルに切り出し
+- フロント設定の変更を容易にする
+
+---
+
+## 詳細リファクタリング計画（2026-01-16 チャート機能）
+
+### 概要
+
+ローソク足チャート・移動平均線・出来高表示の実装に伴い、フロントエンドコードの改善が必要。
+以下に具体的な実装案を記載する。
+
+---
+
+### 1. AppStateとグローバル変数の二重管理解消 [優先度: 高]
+
+**現状の問題:**
+- `AppState`オブジェクトと`let`グローバル変数が並存
+- `selectedMAPeriods`/`maSeries`/`lwChart`が`AppState`に含まれていない
+- 状態更新が統一されていない
+
+**提案コード:**
+```javascript
+const AppState = {
+    // 既存
+    currentStock: null,
+    currentPeriod: '3mo',
+    currentTab: 'chart',
+    chart: null,
+    autoRefreshInterval: null,
+    stocksData: [],
+    
+    // 追加
+    selectedMAPeriods: [5, 15],
+    maSeries: [],
+    lwChart: null,
+    currentPriceData: null,
+    currentAnalysisData: null,
+    
+    // 状態更新メソッド
+    setCurrentStock(symbol) { this.currentStock = symbol; },
+    setPeriod(period) { this.currentPeriod = period; },
+    setTab(tab) { this.currentTab = tab; },
+    setChart(chartInstance) { this.chart = chartInstance; },
+    setLwChart(chartInstance) { this.lwChart = chartInstance; },
+    setMASeries(series) { this.maSeries = series; },
+    setSelectedMAPeriods(periods) { this.selectedMAPeriods = periods; },
+    setPriceData(data) { this.currentPriceData = data; },
+    setAnalysisData(data) { this.currentAnalysisData = data; }
+};
+```
+
+**影響ファイル:** `static/app.js`
+**工数:** 中
+
+---
+
+### 2. チャート設定の定数化 [優先度: 高]
+
+**現状の問題:**
+- MA期間リスト`[5, 10, 15, ...]`がハードコード（L538）
+- 最大選択数`2`がマジックナンバー（L868）
+- チャート色設定が`drawChart`内に散在
+
+**提案コード:**
+```javascript
+const CHART_CONFIG = {
+    MA: {
+        periods: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50],
+        maxSelection: 2,
+        defaultSelection: [5, 15],
+        colors: [
+            '#fbbf24',  // 黄色
+            '#8b5cf6',  // 紫色
+            '#3b82f6',  // 青色
+            '#10b981',  // 緑色
+            '#f59e0b',  // オレンジ
+            '#ef4444',  // 赤色
+            '#06b6d4',  // シアン
+            '#a855f7',  // 紫
+            '#ec4899',  // ピンク
+            '#14b8a6'   // ティール
+        ]
+    },
+    CANDLE: {
+        upColor: '#22c55e',
+        downColor: '#ef4444',
+        borderUpColor: '#22c55e',
+        borderDownColor: '#ef4444',
+        wickUpColor: '#22c55e',
+        wickDownColor: '#ef4444'
+    },
+    VOLUME: {
+        upColor: 'rgba(34, 197, 94, 0.5)',
+        downColor: 'rgba(239, 68, 68, 0.5)'
+    },
+    PERIOD: {
+        default: '3mo',
+        options: ['1mo', '3mo', '6mo', '1y', '2y'],
+        labels: { '1mo': '1M', '3mo': '3M', '6mo': '6M', '1y': '1Y', '2y': '2Y' }
+    }
+};
+```
+
+**影響ファイル:** `static/app.js`
+**工数:** 小
+
+---
+
+### 3. drawChart関数の分割 [優先度: 中]
+
+**現状の問題:**
+- 1関数で「チャート生成」「ローソク足」「出来高」「移動平均線」を処理
+- 約120行の巨大関数（L726-850）
+- テストが困難
+
+**提案コード:**
+```javascript
+const ChartManager = {
+    chart: null,
+    series: {
+        candle: null,
+        volume: null,
+        ma: []
+    },
+
+    // チャートインスタンス生成
+    create(element) {
+        this.chart = LightweightCharts.createChart(element, {
+            layout: { background: { color: 'transparent' }, textColor: '#64748b' },
+            grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(255,255,255,0.05)' } },
+            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+            rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.1, bottom: 0.1 } },
+            leftPriceScale: { visible: true, borderVisible: false, scaleMargins: { top: 0.8, bottom: 0 } },
+            timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false }
+        });
+        return this.chart;
+    },
+
+    // チャート破棄
+    destroy() {
+        this.series.ma = [];
+        if (this.chart) {
+            try { this.chart.remove(); } catch (e) { console.warn('チャート削除失敗:', e); }
+            this.chart = null;
+        }
+    },
+
+    // ローソク足描画
+    renderCandles(history) {
+        this.series.candle = this.chart.addCandlestickSeries(CHART_CONFIG.CANDLE);
+        this.series.candle.setData(DataTransformer.toOHLC(history));
+    },
+
+    // 出来高描画
+    renderVolume(history) {
+        this.series.volume = this.chart.addHistogramSeries({
+            priceFormat: { type: 'volume', precision: 0, minMove: 1 },
+            priceScaleId: 'left',
+            scaleMargins: { top: 0.8, bottom: 0 }
+        });
+        this.series.volume.setData(DataTransformer.toVolume(history));
+    },
+
+    // 移動平均線描画
+    renderMA(history, periods) {
+        periods.forEach((period, index) => {
+            const maData = DataTransformer.toMA(history, period);
+            if (maData.length > 0) {
+                const maSeries = this.chart.addLineSeries({
+                    color: CHART_CONFIG.MA.colors[index % CHART_CONFIG.MA.colors.length],
+                    lineWidth: 2,
+                    title: `MA${period}`,
+                    priceLineVisible: false,
+                    lastValueVisible: true
+                });
+                maSeries.setData(maData);
+                this.series.ma.push(maSeries);
+            }
+        });
+    },
+
+    // メイン描画
+    draw(element, history, periods) {
+        this.destroy();
+        this.create(element);
+        this.renderCandles(history);
+        this.renderVolume(history);
+        this.renderMA(history, periods);
+        this.chart.timeScale().fitContent();
+        return this.chart;
+    }
+};
+```
+
+**影響ファイル:** `static/app.js`
+**工数:** 大
+
+---
+
+### 4. データ変換ユーティリティの抽出 [優先度: 中]
+
+**現状の問題:**
+- `history.map(d => ({...}))`が複数箇所に存在
+- 変換ロジックが分散
+
+**提案コード:**
+```javascript
+const DataTransformer = {
+    // OHLC形式に変換
+    toOHLC(history) {
+        return history.map(d => ({
+            time: d.date,
+            open: d.open,
+            high: d.high,
+            low: d.low,
+            close: d.close
+        }));
+    },
+    
+    // 出来高形式に変換
+    toVolume(history) {
+        return history.map(d => ({
+            time: d.date,
+            value: d.volume,
+            color: d.close >= d.open ? CHART_CONFIG.VOLUME.upColor : CHART_CONFIG.VOLUME.downColor
+        }));
+    },
+    
+    // 移動平均形式に変換
+    toMA(history, period) {
+        const maData = [];
+        const closes = history.map(d => d.close);
+        
+        for (let i = 0; i < history.length; i++) {
+            if (i >= period - 1) {
+                const sum = closes.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0);
+                maData.push({ time: history[i].date, value: sum / period });
+            }
+        }
+        return maData;
+    }
+};
+```
+
+**影響ファイル:** `static/app.js`
+**工数:** 中
+
+---
+
+### 5. UIテンプレート分割 [優先度: 低]
+
+**現状の問題:**
+- `renderChartTab`のHTMLテンプレートが約35行
+- 価格情報/MA選択/チャートコンテナが混在
+
+**提案コード:**
+```javascript
+const Templates = {
+    priceInfo(priceData, currencySymbol, currency) {
+        return `
+            <div class="price-info">
+                <div class="info-box"><h4>現在価格</h4><div class="value">${formatPrice(priceData.current_price, currencySymbol, currency)}</div></div>
+                <div class="info-box"><h4>前日終値</h4><div class="value">${formatPrice(priceData.previous_close, currencySymbol, currency)}</div></div>
+                <div class="info-box"><h4>出来高</h4><div class="value">${formatNumber(priceData.volume)}</div></div>
+                <div class="info-box"><h4>時価総額</h4><div class="value">${formatLargeNumber(priceData.market_cap, currencySymbol, currency)}</div></div>
+                <div class="info-box"><h4>52週高値</h4><div class="value">${formatPrice(priceData['52_week_high'], currencySymbol, currency)}</div></div>
+                <div class="info-box"><h4>52週安値</h4><div class="value">${formatPrice(priceData['52_week_low'], currencySymbol, currency)}</div></div>
+            </div>
+        `;
+    },
+    
+    maSelector(periods, selected) {
+        const checkboxes = periods.map(period => `
+            <label class="ma-checkbox-label">
+                <input type="checkbox" class="ma-period-checkbox" value="${period}" 
+                       ${selected.includes(period) ? 'checked' : ''} onchange="toggleMAPeriod(${period})">
+                <span>MA${period}</span>
+            </label>
+        `).join('');
+        
+        return `
+            <div class="ma-selector">
+                <div class="ma-selector-label">移動平均線:</div>
+                <div class="ma-checkbox-group">${checkboxes}</div>
+            </div>
+        `;
+    },
+    
+    chartContainer() {
+        return '<div class="chart-container"><div id="candlestickChart" style="height: 400px;"></div></div>';
+    }
+};
+```
+
+**影響ファイル:** `static/app.js`
+**工数:** 中
+
+---
+
+### 6. イベントハンドラの整理 [優先度: 低]
+
+**現状の問題:**
+- `onclick="toggleMAPeriod(${period})"`がインラインで定義
+- イベント登録が分散
+
+**提案:**
+- イベント委譲パターンの導入
+- `data-*`属性を使用した統一的なイベント処理
+
+```javascript
+// イベント委譲による統一処理
+document.addEventListener('change', (e) => {
+    if (e.target.classList.contains('ma-period-checkbox')) {
+        const period = parseInt(e.target.value);
+        toggleMAPeriod(period);
+    }
+});
+```
+
+**影響ファイル:** `static/app.js`
+**工数:** 中
+
+---
+
+### 実装優先度まとめ
+
+| 優先度 | 項目 | 影響 | 工数 | 依存関係 |
+|--------|------|------|------|----------|
+| **高** | 1. AppState統合 | 状態管理の一貫性 | 中 | なし |
+| **高** | 2. 定数化 | 保守性・可読性 | 小 | なし |
+| **中** | 3. drawChart分割 | 可読性・テスト性 | 大 | 1, 2 |
+| **中** | 4. データ変換抽出 | 再利用性 | 中 | 2 |
+| **低** | 5. テンプレート分割 | 保守性 | 中 | 2 |
+| **低** | 6. イベント整理 | 保守性 | 中 | なし |
+
+---
+
+### 推奨実装順序
+
+1. **Phase 1**: 定数化（CHART_CONFIG）→ 影響範囲が小さく、他の変更の基盤となる
+2. **Phase 2**: AppState統合 → グローバル状態を整理
+3. **Phase 3**: データ変換ユーティリティ → 再利用可能なコードを分離
+4. **Phase 4**: drawChart分割 → ChartManagerへの移行
+5. **Phase 5**: テンプレート・イベント整理 → 保守性向上
