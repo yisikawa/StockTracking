@@ -534,7 +534,7 @@ function renderStockDetail(priceData, analysisData) {
         <button class="tab-btn ${currentTab === 'financials' ? 'active' : ''}" onclick="switchTab('financials')">🏢 財務</button>
         <button class="tab-btn ${currentTab === 'dividends' ? 'active' : ''}" onclick="switchTab('dividends')">💵 配当</button>
         <button class="tab-btn ${currentTab === 'portfolio' ? 'active' : ''}" onclick="switchTab('portfolio')">💼 保有状況</button>
-        <button class="tab-btn ${currentTab === 'prediction' ? 'active' : ''}" onclick="switchTab('prediction')">🔮 予測</button>
+        <button class="tab-btn ${currentTab === 'prediction' ? 'active' : ''}" onclick="switchTab('prediction')">🔮 株価予測</button>
     `;
 
     detailPanel.innerHTML = `
@@ -1258,7 +1258,7 @@ async function renderPredictionTab(container, symbol, currencySymbol, currency) 
             <div class="prediction-section">
                 <div class="prediction-header">
                     <div class="prediction-summary-card">
-                        <div class="card-title">翌営業日 (${nextDay.date}) の予測</div>
+                        <div class="card-title">翌営業日 (${nextDay.date}) の株価予測</div>
                         <div class="card-main-value ${trendClass}">
                             ${formatPrice(nextDay.price, currencySymbol, currency)}
                             <span class="trend-icon">${trendIcon}</span>
@@ -1303,7 +1303,7 @@ async function renderPredictionTab(container, symbol, currencySymbol, currency) 
                 labels: data.dates,
                 datasets: [
                     {
-                        label: '予測上限 (Upper)',
+                        label: '株価予測上限 (Upper)',
                         data: data.forecast.upper,
                         borderColor: 'transparent',
                         backgroundColor: 'rgba(102, 126, 234, 0.2)', // Fill color
@@ -1312,7 +1312,7 @@ async function renderPredictionTab(container, symbol, currencySymbol, currency) 
                         tension: 0.4
                     },
                     {
-                        label: '予測下限 (Lower)',
+                        label: '株価予測下限 (Lower)',
                         data: data.forecast.lower,
                         borderColor: 'transparent',
                         pointRadius: 0,
@@ -1320,7 +1320,7 @@ async function renderPredictionTab(container, symbol, currencySymbol, currency) 
                         tension: 0.4
                     },
                     {
-                        label: '予測値 (Forecast)',
+                        label: '株価予測値 (Forecast)',
                         data: data.forecast.yhat,
                         borderColor: '#667eea',
                         backgroundColor: '#667eea',
@@ -1343,8 +1343,8 @@ async function renderPredictionTab(container, symbol, currencySymbol, currency) 
                         display: true,
                         labels: {
                             filter: function (item, chart) {
-                                // Upper/Lowerのラベルは隠して、予測値だけ見せる、あるいはまとめて見せる
-                                return item.text === '予測値 (Forecast)';
+                                // Upper/Lowerのラベルは隠して、株価予測値だけ見せる、あるいはまとめて見せる
+                                return item.text === '株価予測値 (Forecast)';
                             }
                         }
                     },
